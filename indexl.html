@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="index.title">AI Pose Detection System</title>
+    <script src="pose/i18n.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        /* LICENSE验证弹窗样式 */
+        .license-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .license-modal {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 2px solid #00d4ff;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(0, 212, 255, 0.3);
+        }
+        
+        .license-modal h2 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .license-modal .icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        .license-input {
+            width: 100%;
+            padding: 15px;
+            margin: 15px 0;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-size: 1.1em;
+            text-align: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .license-input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        
+        .license-btn {
+            width: 100%;
+            padding: 15px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .license-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        
+        .license-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 10px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        
+        .license-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        
+        .license-status.valid {
+            background: rgba(0, 255, 100, 0.2);
+            color: #44ff44;
+        }
+        
+        .license-status.invalid {
+            background: rgba(255, 0, 0, 0.2);
+            color: #ff4444;
+        }
+        
+        .countdown {
+            font-size: 2em;
+            color: #ffaa00;
+            margin: 15px 0;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        /* 主页面样式 */
+        .main-container {
+            display: none;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 40px 0;
+        }
+        
+        header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf, #ff6b6b, #ffd700);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradient 5s ease infinite;
+        }
+        
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        header p {
+            color: #888;
+            font-size: 1.2em;
+        }
+        
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        
+        .module-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .module-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.05) 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .module-card:hover::before {
+            opacity: 1;
+        }
+        
+        .module-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+        
+        .module-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        .module-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        
+        .module-card p {
+            color: #888;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        
+        .module-features {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        
+        .feature-tag {
+            padding: 5px 12px;
+            background: rgba(0, 212, 255, 0.2);
+            border-radius: 15px;
+            font-size: 0.8em;
+            color: #00d4ff;
+        }
+        
+        /* 各模块主题色 */
+        .module-card.tabletennis:hover {
+            border-color: #00d4ff;
+            box-shadow: 0 20px 40px rgba(0, 212, 255, 0.2);
+        }
+        
+        .module-card.golf:hover {
+            border-color: #44ff44;
+            box-shadow: 0 20px 40px rgba(68, 255, 68, 0.2);
+        }
+        
+        .module-card.bowling:hover {
+            border-color: #ff6b6b;
+            box-shadow: 0 20px 40px rgba(255, 107, 107, 0.2);
+        }
+        
+        .module-card.taiji:hover {
+            border-color: #ffd700;
+            box-shadow: 0 20px 40px rgba(255, 215, 0, 0.2);
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 60px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .footer p {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .license-info-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            text-align: center;
+            font-size: 0.85em;
+            color: #888;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .license-info-bar.show {
+            display: block;
+        }
+        
+        .license-info-bar .verified {
+            color: #44ff44;
+        }
+        
+        .license-info-bar .trial {
+            color: #ffaa00;
+        }
+        
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2em;
+            }
+            
+            .modules-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- LICENSE验证弹窗 -->
+    <div class="license-overlay" id="licenseOverlay">
+        <div class="license-modal">
+            <div class="icon">&#x1F510;</div>
+            <h2 data-i18n="license.title">License Verification</h2>
+            <div class="license-info" id="licenseInfo">
+                <p data-i18n="license.welcome">Welcome to AI Pose Detection System</p>
+                <p data-i18n="license.contact">Please contact 520mus.top for authorization</p>
+            </div>
+            <div class="countdown hidden" id="trialCountdown"></div>
+            <input type="text" class="license-input" id="licenseInput" 
+                   data-i18n-placeholder="license.placeholder" placeholder="520MUS-XXXX-XXXX-XXXX-XXXX" maxlength="32">
+            <button class="license-btn" id="verifyBtn" data-i18n="license.verify">Verify License</button>
+            <div class="license-status hidden" id="licenseStatus"></div>
+        </div>
+    </div>
+
+    <!-- 许可证信息栏 -->
+    <div class="license-info-bar" id="licenseInfoBar">
+        <span id="licenseStatusText"></span>
+    </div>
+
+    <!-- 主页面 -->
+    <div class="main-container" id="mainContainer">
+        <header>
+            <h1 data-i18n="index.title">&#x1F3AF; AI Pose Detection System</h1>
+            <p data-i18n="index.subtitle">Intelligent Sports Pose Analysis Platform powered by 520mus</p>
+        </header>
+
+        <div class="modules-grid">
+            <!-- 乒乓球 & 高尔夫球 -->
+            <div class="module-card tabletennis" onclick="openModule('pose/pose_detection.html')">
+                <div class="module-icon">&#x1F3D3;&#x26F3;</div>
+                <h3 data-i18n="index.tabletennis">Table Tennis &amp; Golf</h3>
+                <p data-i18n="index.tabletennis_desc">Professional table tennis and golf pose detection and analysis to improve your swing and performance.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.tabletennis_tag1">Elbow Angle</span>
+                    <span class="feature-tag" data-i18n="index.tabletennis_tag2">Knee Bend</span>
+                    <span class="feature-tag" data-i18n="index.tabletennis_tag3">Spine Tilt</span>
+                    <span class="feature-tag" data-i18n="index.tabletennis_tag4">Motion Score</span>
+                </div>
+            </div>
+
+            <!-- 保龄球 -->
+            <div class="module-card bowling" onclick="openModule('pose/bowling_pose_detection.html')">
+                <div class="module-icon">&#x1F3B3;</div>
+                <h3 data-i18n="index.bowling">Bowling Pose Detection</h3>
+                <p data-i18n="index.bowling_desc">Smart bowling motion analysis system with real-time ball speed detection and pose scoring.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.bowling_tag1">Ball Speed</span>
+                    <span class="feature-tag" data-i18n="index.bowling_tag2">Trajectory</span>
+                    <span class="feature-tag" data-i18n="index.bowling_tag3">Backswing</span>
+                    <span class="feature-tag" data-i18n="index.bowling_tag4">Phase Analysis</span>
+                </div>
+            </div>
+
+            <!-- 太极拳 -->
+            <div class="module-card taiji" onclick="openModule('pose/taiji_pose_detection.html')">
+                <div class="module-icon">&#x262F;&#xFE0F;</div>
+                <h3 data-i18n="index.taiji">Tai Chi Pose Detection</h3>
+                <p data-i18n="index.taiji_desc">Traditional Tai Chi intelligent teaching system with 24-form, 48-form, and 88-form recognition.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.taiji_tag1">Pose Recognition</span>
+                    <span class="feature-tag" data-i18n="index.taiji_tag2">Flow Display</span>
+                    <span class="feature-tag" data-i18n="index.taiji_tag3">Balance Monitor</span>
+                    <span class="feature-tag" data-i18n="index.taiji_tag4">Breath Rhythm</span>
+                </div>
+            </div>
+
+            <!-- 深蹲姿势检测 -->
+            <div class="module-card" onclick="openModule('pose/squat_pose_detection.html')">
+                <div class="module-icon">&#x1F3CB;&#xFE0F;</div>
+                <h3 data-i18n="index.squat">Squat Pose Detection</h3>
+                <p data-i18n="index.squat_desc">Standard fitness squat detection with side/front dual-angle analysis, real-time knee/hip/back angle measurement, auto counting and scoring.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.squat_tag1">Knee Monitor</span>
+                    <span class="feature-tag" data-i18n="index.squat_tag2">Hip Analysis</span>
+                    <span class="feature-tag" data-i18n="index.squat_tag3">Phase Detection</span>
+                    <span class="feature-tag" data-i18n="index.squat_tag4">Auto Count</span>
+                    <span class="feature-tag" data-i18n="index.squat_tag5">Quality Score</span>
+                </div>
+            </div>
+
+            <!-- 标准姿势对比训练 -->
+            <div class="module-card" onclick="openModule('pose/image_pose_detection.html')">
+                <div class="module-icon">&#x1F4F8;</div>
+                <h3 data-i18n="index.compare">Standard Pose Comparison</h3>
+                <p data-i18n="index.compare_desc">Upload coach standard pose images, real-time camera follow-along practice, side-by-side skeleton comparison with smart scoring.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.compare_tag1">Image Upload</span>
+                    <span class="feature-tag" data-i18n="index.compare_tag2">Skeleton Compare</span>
+                    <span class="feature-tag" data-i18n="index.compare_tag3">Similarity Score</span>
+                    <span class="feature-tag" data-i18n="index.compare_tag4">Improvement Tips</span>
+                </div>
+            </div>
+
+            <!-- 手部/球体轨迹追踪 -->
+            <div class="module-card" onclick="openModule('pose/guiji_hands.html')" style="border-color: #facc15;">
+                <div class="module-icon">&#x1F91A;&#x26BD;</div>
+                <h3>Hand &amp; Ball Tracking</h3>
+                <p>Real-time hand and sports ball tracking with trajectory drawing, supporting hand fingertip and ball motion path visualization.</p>
+                <div class="module-features">
+                    <span class="feature-tag" style="background: rgba(250, 204, 21, 0.2); color: #facc15;">Hand Tracking</span>
+                    <span class="feature-tag" style="background: rgba(250, 204, 21, 0.2); color: #facc15;">Ball Tracking</span>
+                    <span class="feature-tag" style="background: rgba(250, 204, 21, 0.2); color: #facc15;">Trajectory</span>
+                    <span class="feature-tag" style="background: rgba(250, 204, 21, 0.2); color: #facc15;">Real-time</span>
+                </div>
+            </div>
+
+            <!-- 跑步手部摆动轨迹 -->
+            <div class="module-card" onclick="openModule('pose/guiji_hands_run.html')" style="border-color: #58a6ff;">
+                <div class="module-icon">&#x1F3C3;&#x1F91A;</div>
+                <h3>Running Hand Swing</h3>
+                <p>Real-time dual-hand swing trajectory tracking for running, with swing amplitude, frequency, and phase difference analysis.</p>
+                <div class="module-features">
+                    <span class="feature-tag" style="background: rgba(88, 166, 255, 0.2); color: #58a6ff;">Dual Hands</span>
+                    <span class="feature-tag" style="background: rgba(88, 166, 255, 0.2); color: #58a6ff;">Swing Amplitude</span>
+                    <span class="feature-tag" style="background: rgba(88, 166, 255, 0.2); color: #58a6ff;">Frequency</span>
+                    <span class="feature-tag" style="background: rgba(88, 166, 255, 0.2); color: #58a6ff;">Phase Analysis</span>
+                </div>
+            </div>
+
+            <!-- 姿态编辑训练 -->
+            <div class="module-card" onclick="openModule('pose/pose_editor.html')">
+                <div class="module-icon">&#x270F;&#xFE0F;</div>
+                <h3 data-i18n="index.editor">Pose Editor</h3>
+                <p data-i18n="index.editor_desc">Pause camera feed, drag to adjust skeleton keypoints, auto-stretching bone lines, precise pose editing.</p>
+                <div class="module-features">
+                    <span class="feature-tag" data-i18n="index.editor_tag1">Screenshot Pause</span>
+                    <span class="feature-tag" data-i18n="index.editor_tag2">Drag Edit</span>
+                    <span class="feature-tag" data-i18n="index.editor_tag3">Line Stretch</span>
+                    <span class="feature-tag" data-i18n="index.editor_tag4">Coord Export</span>
+                </div>
+            </div>
+
+            <!-- License管理后台
+            <div class="module-card" onclick="openModule('pose/indexladmin.html')">
+                <div class="module-icon">🔑</div>
+                <h3>License管理后台</h3>
+                <p>管理系统许可证秘钥，生成/查询/验证秘钥，查看系统配置和存储状态。</p>
+                <div class="module-features">
+                    <span class="feature-tag">秘钥生成</span>
+                    <span class="feature-tag">秘钥管理</span>
+                    <span class="feature-tag">秘钥验证</span>
+                    <span class="feature-tag">存储检查</span>
+                </div>
+            </div> -->
+        </div>
+
+        <div class="footer">
+            <p data-i18n="common.powered">Powered by 520mus.top | AI Pose Detection System &copy; 2026</p>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // LICENSE验证系统 - 与pose_detection.html相同的加密方式
+        // ============================================
+        
+        (function() {
+            'use strict';
+            
+            // 加密密钥（与pose_detection.html保持一致）
+            const SECRET_KEY = '520mus.top_2024_pose_detection_secret';
+            
+            // 试用期限配置
+            const TRIAL_DAYS = 90;
+            const GRACE_PERIOD_DAYS = 31;
+            const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+            const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+            
+            // 存储键名（混淆处理）- 与pose_detection.html使用相同的键
+            const STORAGE_KEYS = {
+                license: btoa('pd_lic_key_v1'),
+                installDate: btoa('pd_inst_date_v1'),
+                verified: btoa('pd_verified_v1'),
+                machineId: btoa('pd_machine_v1')
+            };
+            
+            // 生成机器唯一标识
+            function generateMachineId() {
+                const nav = window.navigator;
+                const screen = window.screen;
+                const components = [
+                    nav.userAgent,
+                    nav.language,
+                    screen.width + 'x' + screen.height,
+                    screen.colorDepth,
+                    new Date().getTimezoneOffset()
+                ];
+                return btoa(components.join('|')).substring(0, 32);
+            }
+            
+            // 简单的哈希函数
+            function simpleHash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+            }
+            
+            // 生成有效LICENSE密钥
+            function generateValidLicense() {
+                const machineId = getMachineId();
+                const timestamp = Date.now();
+                const data = `${machineId}_${SECRET_KEY}_${timestamp}`;
+                const hash = simpleHash(data);
+                return `520MUS-${hash.substring(0, 4)}-${hash.substring(4, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}`;
+            }
+            
+            // 验证LICENSE格式
+            function validateLicenseFormat(license) {
+                const pattern = /^520MUS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+                return pattern.test(license.toUpperCase());
+            }
+            
+            // 验证LICENSE有效性
+            function verifyLicense(license) {
+                if (!validateLicenseFormat(license)) {
+                    return { valid: false, message: I18N.t('license.format_error') };
+                }
+                
+                const expectedLicense = generateValidLicense();
+                
+                const validLicenses = [
+                    expectedLicense,
+                    '520MUS-ABCD-1234-EFGH-5678',
+                    '520MUS-POS3-DETE-CTIO-N202',
+                    '520MUS-TABL-ETEN-NIS-GO24',
+                    '520MUS-GOLF-SWNG-POSE-2024',
+                    '520MUS-BOWL-INGS-PEED-2024',
+                    '520MUS-TAIJ-QUAN-POSE-2024',
+                    '520MUS-UNIF-IED-ENTR-Y202'
+                ];
+                
+                if (validLicenses.includes(license.toUpperCase())) {
+                    return { valid: true, message: I18N.t('license.valid'), type: 'full' };
+                }
+                
+                return { valid: false, message: I18N.t('license.invalid') };
+            }
+            
+            // 获取机器ID
+            function getMachineId() {
+                let machineId = localStorage.getItem(STORAGE_KEYS.machineId);
+                if (!machineId) {
+                    machineId = generateMachineId();
+                    localStorage.setItem(STORAGE_KEYS.machineId, machineId);
+                }
+                return atob(machineId);
+            }
+            
+            // 获取安装日期
+            function getInstallDate() {
+                let installDate = localStorage.getItem(STORAGE_KEYS.installDate);
+                if (!installDate) {
+                    installDate = btoa(Date.now().toString());
+                    localStorage.setItem(STORAGE_KEYS.installDate, installDate);
+                }
+                return parseInt(atob(installDate));
+            }
+            
+            // 检查试用状态
+            function checkTrialStatus() {
+                const installDate = getInstallDate();
+                const now = Date.now();
+                const elapsed = now - installDate;
+                const remaining = Math.max(0, TRIAL_MS - elapsed);
+                const graceRemaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
+                
+                return {
+                    isTrial: remaining > 0,
+                    remainingDays: Math.ceil(remaining / (24 * 60 * 60 * 1000)),
+                    remainingMs: remaining,
+                    isExpired: remaining <= 0,
+                    inGracePeriod: graceRemaining > 0,
+                    graceRemainingDays: Math.ceil(graceRemaining / (24 * 60 * 60 * 1000)),
+                    graceRemainingMs: graceRemaining
+                };
+            }
+            
+            // 保存LICENSE
+            function saveLicense(license) {
+                const encrypted = btoa(license.toUpperCase());
+                localStorage.setItem(STORAGE_KEYS.license, encrypted);
+                localStorage.setItem(STORAGE_KEYS.verified, btoa('true'));
+            }
+            
+            // 获取已保存的LICENSE
+            function getSavedLicense() {
+                const encrypted = localStorage.getItem(STORAGE_KEYS.license);
+                if (encrypted) {
+                    return atob(encrypted);
+                }
+                return null;
+            }
+            
+            // 检查是否已验证
+            function isVerified() {
+                const verified = localStorage.getItem(STORAGE_KEYS.verified);
+                return verified && atob(verified) === 'true';
+            }
+            
+            // 格式化倒计时
+            function formatCountdown(ms) {
+                const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+                const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                return `${days}天${hours}小时`;
+            }
+            
+            // 显示LICENSE弹窗
+            function showLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const info = document.getElementById('licenseInfo');
+                const countdown = document.getElementById('trialCountdown');
+                const trialStatus = checkTrialStatus();
+                
+                // 前31天宽限期：直接无感使用
+                if (trialStatus.inGracePeriod && !isVerified()) {
+                    hideLicenseModal();
+                    updateLicenseInfoBar();
+                    return;
+                }
+                
+                if (trialStatus.isTrial && !isVerified()) {
+                    // info.innerHTML = `
+                    //     <p>🎉 欢迎使用AI姿势检测系统</p>
+                    //     <p>您的试用期还剩 <strong style="color: #00d4ff;">${trialStatus.remainingDays}天</strong></p>
+                    //     <p style="font-size: 0.85em; margin-top: 10px;">试用期结束后需要输入LICENSE继续使用</p>
+                    //     <p style="font-size: 0.85em;">如需永久授权，请联系 520mus.top</p>
+                    // `;
+                    info.innerHTML = `
+                        <p>&#x1F389; ` + I18N.t('license.welcome') + `</p>
+                        
+                    `;
+                    countdown.classList.remove('hidden');
+                    countdown.textContent = formatCountdown(trialStatus.remainingMs);
+                    
+                    setTimeout(() => {
+                        hideLicenseModal();
+                        updateLicenseInfoBar();
+                    }, 3000);
+                } else if (trialStatus.isExpired && !isVerified()) {
+                    info.innerHTML = `
+                        <p>&#x26A0;&#xFE0F; ` + I18N.t('license.expired') + `</p>
+                        <p>` + I18N.t('license.enter') + `</p>
+                        <p style="font-size: 0.85em; margin-top: 10px;">` + I18N.t('license.contact') + `</p>
+                    `;
+                    countdown.classList.add('hidden');
+                    document.getElementById('licenseInput').focus();
+                } else if (isVerified()) {
+                    hideLicenseModal();
+                    updateLicenseInfoBar();
+                    return;
+                }
+                
+                overlay.classList.remove('hidden');
+            }
+            
+            // 隐藏LICENSE弹窗
+            function hideLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const container = document.getElementById('mainContainer');
+                overlay.style.display = 'none';
+                container.style.display = 'block';
+            }
+            
+            // 显示验证状态
+            function showStatus(message, type) {
+                const status = document.getElementById('licenseStatus');
+                status.textContent = message;
+                status.className = 'license-status ' + type;
+                status.classList.remove('hidden');
+            }
+            
+            // 更新许可证信息栏
+            function updateLicenseInfoBar() {
+                const bar = document.getElementById('licenseInfoBar');
+                const text = document.getElementById('licenseStatusText');
+                const trialStatus = checkTrialStatus();
+                
+                if (isVerified()) {
+                    text.innerHTML = '<span class="verified">&#x2713; ' + I18N.t('license.valid') + '</span> | ' + I18N.t('license.welcome');
+                } else if (trialStatus.inGracePeriod) {
+                    //text.innerHTML = `<span class="trial">试用期</span> | 剩余 ${trialStatus.graceRemainingDays} 天（无感使用）`;
+                } else if (trialStatus.isTrial) {
+                    //text.innerHTML = `<span class="trial">试用期</span> | 剩余 ${trialStatus.remainingDays} 天`;
+                }
+                
+                bar.classList.add('show');
+            }
+            
+            // 初始化LICENSE系统
+            function initLicenseSystem() {
+                const savedLicense = getSavedLicense();
+                if (savedLicense) {
+                    const result = verifyLicense(savedLicense);
+                    if (result.valid) {
+                        hideLicenseModal();
+                        updateLicenseInfoBar();
+                        return;
+                    }
+                }
+                
+                showLicenseModal();
+                
+                document.getElementById('verifyBtn').addEventListener('click', function() {
+                    const input = document.getElementById('licenseInput');
+                    const license = input.value.trim();
+                    
+                    if (!license) {
+                        showStatus(I18N.t('license.enter'), 'invalid');
+                        return;
+                    }
+                    
+                    const result = verifyLicense(license);
+                    if (result.valid) {
+                        saveLicense(license);
+                        showStatus('✓ ' + result.message, 'valid');
+                        setTimeout(() => {
+                            hideLicenseModal();
+                            updateLicenseInfoBar();
+                        }, 1500);
+                    } else {
+                        showStatus('✗ ' + result.message, 'invalid');
+                    }
+                });
+                
+                document.getElementById('licenseInput').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        document.getElementById('verifyBtn').click();
+                    }
+                });
+            }
+            
+            // 定期检查和防篡改
+            function startSecurityCheck() {
+                setInterval(() => {
+                    const trialStatus = checkTrialStatus();
+                    
+                    if (trialStatus.inGracePeriod) {
+                        return;
+                    }
+                    
+                    if (!isVerified()) {
+                        if (trialStatus.isExpired) {
+                            document.getElementById('mainContainer').style.display = 'none';
+                            document.getElementById('licenseOverlay').style.display = 'flex';
+                            showLicenseModal();
+                        }
+                    }
+                    
+                    if (trialStatus.isTrial && !isVerified()) {
+                        updateLicenseInfoBar();
+                    }
+                }, 60000);
+            }
+            
+            // 页面加载完成后初始化
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    initLicenseSystem();
+                    startSecurityCheck();
+                });
+            } else {
+                initLicenseSystem();
+                startSecurityCheck();
+            }
+            
+            // 暴露调试函数
+            window._licenseDebug = {
+                generateLicense: generateValidLicense,
+                checkTrial: checkTrialStatus,
+                verify: verifyLicense
+            };
+        })();
+        
+        // ============================================
+        // 统一入口功能
+        // ============================================
+        
+        function openModule(moduleUrl) {
+            // 检查LICENSE状态
+            const verified = localStorage.getItem(btoa('pd_verified_v1'));
+            const isVerified = verified && atob(verified) === 'true';
+            
+            // 获取试用状态
+            const installDate = localStorage.getItem(btoa('pd_inst_date_v1'));
+            const elapsed = Date.now() - parseInt(atob(installDate));
+            const gracePeriod = 31 * 24 * 60 * 60 * 1000;
+            const trialPeriod = 90 * 24 * 60 * 60 * 1000;
+            
+            if (!isVerified && elapsed > trialPeriod) {
+                alert(I18N.t('license.expired'));
+                document.getElementById('licenseOverlay').style.display = 'flex';
+                return;
+            }
+            
+            // 打开模块
+            window.open(moduleUrl, '_blank');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="sport.title">Table Tennis &amp; Golf Pose Detection</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        /* LICENSE验证弹窗样式 */
+        .license-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .license-modal {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 2px solid #00d4ff;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(0, 212, 255, 0.3);
+        }
+        
+        .license-modal h2 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .license-modal .icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        .license-input {
+            width: 100%;
+            padding: 15px;
+            margin: 15px 0;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-size: 1.1em;
+            text-align: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .license-input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        
+        .license-btn {
+            width: 100%;
+            padding: 15px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .license-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        
+        .license-btn:disabled {
+            background: #333;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .license-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 10px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        
+        .license-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        
+        .license-status.valid {
+            background: rgba(0, 255, 100, 0.2);
+            color: #44ff44;
+        }
+        
+        .license-status.invalid {
+            background: rgba(255, 0, 0, 0.2);
+            color: #ff4444;
+        }
+        
+        .license-status.expired {
+            background: rgba(255, 165, 0, 0.2);
+            color: #ffaa00;
+        }
+        
+        .countdown {
+            font-size: 2em;
+            color: #ffaa00;
+            margin: 15px 0;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .watermark {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 0.7em;
+            color: rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+            z-index: 9999;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .sport-selector {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .sport-btn {
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+        }
+        
+        .sport-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        .sport-btn.active {
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .video-container {
+            position: relative;
+            background: #0a0a0a;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        
+        .input_video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #a0a0a0;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+            cursor: pointer;
+        }
+        
+        .toggle-btn {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1em;
+        }
+        
+        .toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .toggle-btn.active {
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+        }
+        
+        .analysis-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .analysis-panel h3 {
+            margin-bottom: 15px;
+            color: #00d4ff;
+        }
+        
+        .pose-score {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+        
+        .score-label {
+            flex: 1;
+            font-size: 0.9em;
+        }
+        
+        .score-bar {
+            flex: 2;
+            height: 10px;
+            background: #333;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+        
+        .score-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+        
+        .score-value {
+            width: 50px;
+            text-align: right;
+            font-weight: bold;
+        }
+        
+        .feedback {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 4px solid #00d4ff;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .feedback h4 {
+            margin-bottom: 10px;
+            color: #00d4ff;
+        }
+        
+        .feedback ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .feedback li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .feedback li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #00d4ff;
+        }
+        
+        .camera-select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-size: 1em;
+            margin-bottom: 10px;
+        }
+        
+        .camera-select option {
+            background: #1a1a2e;
+        }
+        
+        .start-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #00d4ff, #7b2cbf);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        
+        .skeleton-toggle {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .skeleton-btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            background: transparent;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.85em;
+        }
+        
+        .skeleton-btn:hover, .skeleton-btn.active {
+            background: rgba(0, 212, 255, 0.3);
+            border-color: #00d4ff;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2em;
+            color: #00d4ff;
+        }
+
+        .key-points {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .key-point {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .key-point-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .key-point-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <script src="i18n.js"></script>
+</head>
+<body>
+    <!-- LICENSE验证弹窗 -->
+    <div class="license-overlay" id="licenseOverlay">
+        <div class="license-modal">
+            <div class="icon">🔐</div>
+            <h2 data-i18n="license.title">License Verification</h2>
+            <div class="license-info" id="licenseInfo">
+                <p>本软件需要有效的许可证密钥才能使用</p>
+                <p>请联系 520mus.top 获取授权</p>
+            </div>
+            <div class="countdown hidden" id="trialCountdown"></div>
+            <input type="text" class="license-input" id="licenseInput" 
+                   placeholder="请输入许可证密钥" maxlength="32">
+            <button class="license-btn" id="verifyBtn">验证许可证</button>
+            <div class="license-status hidden" id="licenseStatus"></div>
+        </div>
+    </div>
+
+    <!-- 水印 -->
+    <div class="watermark">Powered by 520mus.top</div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <header>
+            <h1 data-i18n="sport.title">&#x1F3D3; Table Tennis &amp; Golf &#x26F3; Pose Detection</h1>
+            <p data-i18n="sport.subtitle">Powered by 520mus | Real-time Posture Analysis</p>
+        </header>
+
+        <div class="sport-selector">
+            <button class="sport-btn active" data-sport="tabletennis" data-i18n="sport.tabletennis">&#x1F3D3; Table Tennis</button>
+            <button class="sport-btn" data-sport="golf" data-i18n="sport.golf">&#x26F3; Golf</button>
+        </div>
+
+        <div class="main-content">
+            <div class="video-container">
+                <video class="input_video" playsinline></video>
+                <canvas class="output_canvas"></canvas>
+                <div class="loading" id="loading">正在初始化摄像头...</div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label data-i18n="common.camera">Select Camera</label>
+                    <select class="camera-select" id="cameraSelect">
+                        <option value="" data-i18n="common.camera">Default Camera</option>
+                    </select>
+                </div>
+
+                <button class="start-btn" id="startBtn" data-i18n="sport.start">&#x1F680; Start Detection</button>
+
+                <div class="control-group" style="margin-top: 20px;">
+                    <label data-i18n="sport.confidence">Detection Confidence: <span id="confidenceValue">0.5</span></label>
+                    <input type="range" id="confidenceSlider" min="0.1" max="1" step="0.1" value="0.5">
+                </div>
+
+                <div class="control-group">
+                    <label data-i18n="common.skeleton">Display Options</label>
+                    <div class="skeleton-toggle">
+                        <button class="skeleton-btn active" data-option="skeleton" data-i18n="common.skeleton">Skeleton</button>
+                        <button class="skeleton-btn active" data-option="landmarks" data-i18n="sport.landmarks">Keypoints</button>
+                        <button class="skeleton-btn" data-option="angles" data-i18n="common.angle">Angles</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <button class="toggle-btn active" id="showZones" data-i18n="sport.show_zones">Show Analysis Zones</button>
+                    <button class="toggle-btn" id="mirrorMode" data-i18n="sport.mirror">Mirror Mode</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis-panel">
+            <h3 id="analysisTitle" data-i18n="sport.tabletennis">&#x1F3D3; Table Tennis Posture Analysis</h3>
+            
+            <div class="pose-score">
+                <span class="score-label" data-i18n="sport.score">Overall Score</span>
+                <div class="score-bar">
+                    <div class="score-fill" id="overallScore" style="width: 0%; background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);"></div>
+                </div>
+                <span class="score-value" id="overallScoreValue">0%</span>
+            </div>
+
+            <div id="sportSpecificScores">
+                <!-- 动态生成特定运动的评分项 -->
+            </div>
+
+            <div class="key-points" id="keyPoints">
+                <!-- 动态生成关键点数据 -->
+            </div>
+
+            <div class="feedback">
+                <h4 data-i18n="sport.feedback">&#x1F4A1; Feedback</h4>
+                <ul id="feedbackList">
+                    <li data-i18n="sport.click_start">Click "Start Detection" to begin</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // LICENSE验证系统 - 安全保护模块
+        // ============================================
+        
+        (function() {
+            'use strict';
+            
+            // 加密密钥（实际使用时应从服务器获取）
+            const SECRET_KEY = '520mus.top_2024_pose_detection_secret';
+            
+            // 试用期限配置
+            const TRIAL_DAYS = 90;           // 总试用期90天
+            const GRACE_PERIOD_DAYS = 31;    // 前31天无感使用（无需弹窗）
+            const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+            const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+            
+            // LICENSE授权周期（2个月 = 60天）
+            const LICENSE_VALID_DAYS = 60;
+            const LICENSE_VALID_MS = LICENSE_VALID_DAYS * 24 * 60 * 60 * 1000;
+            
+            // 存储键名（混淆处理）
+            const STORAGE_KEYS = {
+                license: btoa('pd_lic_key_v1'),
+                installDate: btoa('pd_inst_date_v1'),
+                verified: btoa('pd_verified_v1'),
+                machineId: btoa('pd_machine_v1'),
+                licenseDate: btoa('pd_lic_date_v1')  // LICENSE验证时间
+            };
+            
+            // 生成机器唯一标识
+            function generateMachineId() {
+                const nav = window.navigator;
+                const screen = window.screen;
+                const components = [
+                    nav.userAgent,
+                    nav.language,
+                    screen.width + 'x' + screen.height,
+                    screen.colorDepth,
+                    new Date().getTimezoneOffset()
+                ];
+                return btoa(components.join('|')).substring(0, 32);
+            }
+            
+            // 简单的哈希函数
+            function simpleHash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash | 0;
+                }
+                const h1 = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+                let hash2 = 0x6a09e667;
+                for (let i = 0; i < str.length; i++) {
+                    hash2 ^= str.charCodeAt(i);
+                    hash2 = ((hash2 << 7) | (hash2 >>> 25)) >>> 0;
+                }
+                const h2 = Math.abs(hash2).toString(16).toUpperCase().padStart(8, '0');
+                return h1 + h2;
+            }
+            
+            // 生成有效LICENSE密钥
+            function generateValidLicense() {
+                const machineId = getMachineId();
+                const data = `${machineId}_${SECRET_KEY}_2024`;
+                const hash = simpleHash(data);
+                return `520MUS-${hash.substring(0, 4)}-${hash.substring(4, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}`;
+            }
+            
+            // 验证LICENSE格式
+            function validateLicenseFormat(license) {
+                const pattern = /^520MUS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+                return pattern.test(license.toUpperCase());
+            }
+            
+            // 验证LICENSE有效性
+            function verifyLicense(license) {
+                if (!validateLicenseFormat(license)) {
+                    return { valid: false, message: '许可证格式不正确' };
+                }
+                
+                // 这里应该连接服务器验证
+                // 为了演示，我们使用本地验证逻辑
+                const expectedLicense = generateValidLicense();
+                
+                // 简化验证：检查是否匹配预设的有效密钥
+                const validLicenses = [
+                    expectedLicense,
+                    '520MUS-ABCD-1234-EFGH-5678',  // 示例密钥1
+                    '520MUS-POS3-DETE-CTIO-N202',  // 示例密钥2
+                    '520MUS-TABL-ETEN-NIS-GO24',   // 示例密钥3
+                    '520MUS-GOLF-SWNG-POSE-2024'   // 示例密钥4
+                ];
+                
+                if (validLicenses.includes(license.toUpperCase())) {
+                    return { valid: true, message: '许可证验证成功', type: 'full' };
+                }
+                
+                return { valid: false, message: '无效的许可证密钥' };
+            }
+            
+            // 获取机器ID
+            function getMachineId() {
+                let machineId = localStorage.getItem(STORAGE_KEYS.machineId);
+                if (!machineId) {
+                    machineId = generateMachineId();
+                    localStorage.setItem(STORAGE_KEYS.machineId, machineId);
+                }
+                return atob(machineId);
+            }
+            
+            // 获取安装日期
+            function getInstallDate() {
+                let installDate = localStorage.getItem(STORAGE_KEYS.installDate);
+                if (!installDate) {
+                    installDate = btoa(Date.now().toString());
+                    localStorage.setItem(STORAGE_KEYS.installDate, installDate);
+                }
+                return parseInt(atob(installDate));
+            }
+            
+            // 检查试用状态
+            function checkTrialStatus() {
+                const installDate = getInstallDate();
+                const now = Date.now();
+                const elapsed = now - installDate;
+                const remaining = Math.max(0, TRIAL_MS - elapsed);
+                const graceRemaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
+                
+                return {
+                    isTrial: remaining > 0,
+                    remainingDays: Math.ceil(remaining / (24 * 60 * 60 * 1000)),
+                    remainingMs: remaining,
+                    isExpired: remaining <= 0,
+                    // 宽限期状态
+                    inGracePeriod: graceRemaining > 0,
+                    graceRemainingDays: Math.ceil(graceRemaining / (24 * 60 * 60 * 1000)),
+                    graceRemainingMs: graceRemaining
+                };
+            }
+            
+            // 保存LICENSE
+            function saveLicense(license) {
+                const encrypted = btoa(license.toUpperCase());
+                localStorage.setItem(STORAGE_KEYS.license, encrypted);
+                localStorage.setItem(STORAGE_KEYS.verified, btoa('true'));
+                localStorage.setItem(STORAGE_KEYS.licenseDate, btoa(Date.now().toString()));
+            }
+            
+            // 获取已保存的LICENSE
+            function getSavedLicense() {
+                const encrypted = localStorage.getItem(STORAGE_KEYS.license);
+                if (encrypted) {
+                    return atob(encrypted);
+                }
+                return null;
+            }
+            
+            // 获取LICENSE验证时间
+            function getLicenseDate() {
+                const licenseDate = localStorage.getItem(STORAGE_KEYS.licenseDate);
+                if (licenseDate) {
+                    return parseInt(atob(licenseDate));
+                }
+                return 0;
+            }
+            
+            // 检查LICENSE是否过期（2个月）
+            function isLicenseExpired() {
+                const licenseDate = getLicenseDate();
+                if (!licenseDate) return true;
+                const elapsed = Date.now() - licenseDate;
+                return elapsed > LICENSE_VALID_MS;
+            }
+            
+            // 获取LICENSE剩余天数
+            function getLicenseRemainingDays() {
+                const licenseDate = getLicenseDate();
+                if (!licenseDate) return 0;
+                const elapsed = Date.now() - licenseDate;
+                const remaining = Math.max(0, LICENSE_VALID_MS - elapsed);
+                return Math.ceil(remaining / (24 * 60 * 60 * 1000));
+            }
+            
+            // 检查是否已验证
+            function isVerified() {
+                const verified = localStorage.getItem(STORAGE_KEYS.verified);
+                if (!verified || atob(verified) !== 'true') return false;
+                // 检查LICENSE是否过期
+                if (isLicenseExpired()) {
+                    // LICENSE过期，清除验证状态
+                    localStorage.removeItem(STORAGE_KEYS.verified);
+                    localStorage.removeItem(STORAGE_KEYS.licenseDate);
+                    return false;
+                }
+                return true;
+            }
+            
+            // 格式化倒计时
+            function formatCountdown(ms) {
+                const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+                const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                return `${days}天${hours}小时`;
+            }
+            
+            // 显示LICENSE弹窗
+            function showLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const info = document.getElementById('licenseInfo');
+                const countdown = document.getElementById('trialCountdown');
+                const trialStatus = checkTrialStatus();
+                const licenseRemaining = getLicenseRemainingDays();
+                
+                // 检查LICENSE是否即将过期（少于7天）
+                const isLicenseExpiringSoon = licenseRemaining > 0 && licenseRemaining <= 7;
+                
+                // 前31天宽限期：直接无感使用，不显示任何弹窗
+                if (trialStatus.inGracePeriod && !isVerified()) {
+                    hideLicenseModal();
+                    return;
+                }
+                
+                if (trialStatus.isTrial && !isVerified()) {
+                    // 31-90天：显示试用期提醒，但可继续使用
+                    info.innerHTML = `
+                        <p>🎉 欢迎使用姿势检测系统</p>
+                        <p>您的试用期还剩 <strong style="color: #00d4ff;">${trialStatus.remainingDays}天</strong></p>
+                        <p style="font-size: 0.85em; margin-top: 10px;">试用期结束后需要输入LICENSE继续使用</p>
+                        <p style="font-size: 0.85em;">如需永久授权，请联系 520mus.top</p>
+                    `;
+                    countdown.classList.remove('hidden');
+                    countdown.textContent = formatCountdown(trialStatus.remainingMs);
+                    
+                    // 显示10秒后自动隐藏
+                    setTimeout(() => {
+                        hideLicenseModal();
+                    }, 10000);
+                } else if (trialStatus.isExpired && !isVerified()) {
+                    // 试用期已过且未验证
+                    info.innerHTML = `
+                        <p>⚠️ 试用期已结束</p>
+                        <p>请输入有效的许可证密钥继续使用</p>
+                        <p style="font-size: 0.85em; margin-top: 10px;">请联系 520mus.top 获取授权</p>
+                    `;
+                    countdown.classList.add('hidden');
+                    document.getElementById('licenseInput').focus();
+                } else if (isVerified()) {
+                    // 已验证，检查是否需要提醒续期
+                    if (isLicenseExpiringSoon) {
+                        info.innerHTML = `
+                            <p>⚠️ LICENSE即将过期</p>
+                            <p>您的授权还剩 <strong style="color: #ffaa00;">${licenseRemaining}天</strong></p>
+                            <p style="font-size: 0.85em; margin-top: 10px;">请及时续期以保证正常使用</p>
+                            <p style="font-size: 0.85em;">请联系 520mus.top 获取新授权</p>
+                        `;
+                        countdown.classList.add('hidden');
+                        overlay.classList.remove('hidden');
+                        
+                        // 5秒后自动隐藏
+                        setTimeout(() => {
+                            hideLicenseModal();
+                        }, 5000);
+                        return;
+                    }
+                    // 已验证且未过期，隐藏弹窗
+                    hideLicenseModal();
+                    return;
+                }
+                
+                overlay.classList.remove('hidden');
+            }
+            
+            // 隐藏LICENSE弹窗
+            function hideLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const container = document.getElementById('mainContainer');
+                overlay.style.display = 'none';
+                container.style.display = 'block';
+            }
+            
+            // 显示验证状态
+            function showStatus(message, type) {
+                const status = document.getElementById('licenseStatus');
+                status.textContent = message;
+                status.className = 'license-status ' + type;
+                status.classList.remove('hidden');
+            }
+            
+            // 初始化LICENSE系统
+            function initLicenseSystem() {
+                // 检查是否已有有效LICENSE
+                const savedLicense = getSavedLicense();
+                if (savedLicense) {
+                    const result = verifyLicense(savedLicense);
+                    if (result.valid) {
+                        hideLicenseModal();
+                        return;
+                    }
+                }
+                
+                // 显示LICENSE弹窗
+                showLicenseModal();
+                
+                // 绑定验证按钮
+                document.getElementById('verifyBtn').addEventListener('click', function() {
+                    const input = document.getElementById('licenseInput');
+                    const license = input.value.trim();
+                    
+                    if (!license) {
+                        showStatus('请输入许可证密钥', 'invalid');
+                        return;
+                    }
+                    
+                    const result = verifyLicense(license);
+                    if (result.valid) {
+                        saveLicense(license);
+                        showStatus('✓ ' + result.message, 'valid');
+                        setTimeout(() => {
+                            hideLicenseModal();
+                        }, 1500);
+                    } else {
+                        showStatus('✗ ' + result.message, 'invalid');
+                    }
+                });
+                
+                // 支持回车键验证
+                document.getElementById('licenseInput').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        document.getElementById('verifyBtn').click();
+                    }
+                });
+            }
+            
+            // 定期检查和防篡改
+            function startSecurityCheck() {
+                setInterval(() => {
+                    const trialStatus = checkTrialStatus();
+                    
+                    // 前31天宽限期：不执行任何检查
+                    if (trialStatus.inGracePeriod) {
+                        return;
+                    }
+                    
+                    // 检查LICENSE状态（31天后）
+                    if (!isVerified()) {
+                        if (trialStatus.isExpired) {
+                            // 试用期结束，显示弹窗
+                            document.getElementById('mainContainer').style.display = 'none';
+                            document.getElementById('licenseOverlay').style.display = 'flex';
+                            showLicenseModal();
+                        }
+                    }
+                    
+                    // 更新倒计时显示（仅31-90天期间）
+                    if (trialStatus.isTrial && !isVerified()) {
+                        const countdown = document.getElementById('trialCountdown');
+                        if (countdown && !countdown.classList.contains('hidden')) {
+                            countdown.textContent = formatCountdown(trialStatus.remainingMs);
+                        }
+                    }
+                }, 60000); // 每分钟检查一次
+            }
+            
+            // 页面加载完成后初始化
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    initLicenseSystem();
+                    startSecurityCheck();
+                });
+            } else {
+                initLicenseSystem();
+                startSecurityCheck();
+            }
+            
+            // 暴露必要的函数供调试（生产环境应移除）
+            window._licenseDebug = {
+                generateLicense: generateValidLicense,
+                checkTrial: checkTrialStatus,
+                verify: verifyLicense
+            };
+        })();
+        
+        // ============================================
+        // 全局变量
+        // ============================================
+        let currentSport = 'tabletennis';
+        let pose = null;
+        let camera = null;
+        let isRunning = false;
+        let displayOptions = {
+            skeleton: true,
+            landmarks: true,
+            angles: false
+        };
+        let showZones = true;
+        let mirrorMode = false;
+        let minConfidence = 0.5;
+
+        // DOM 元素
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loadingElement = document.getElementById('loading');
+
+        // 运动配置
+        const sportConfigs = {
+            tabletennis: {
+                name: '🏓 乒乓球',
+                keyAngles: ['elbow', 'knee', 'waist', 'shoulder'],
+                idealAngles: {
+                    elbow: { min: 90, max: 120, name: '肘部角度' },
+                    knee: { min: 100, max: 140, name: '膝盖角度' },
+                    waist: { min: 30, max: 60, name: '腰部前倾' },
+                    shoulder: { min: 80, max: 110, name: '肩部角度' }
+                },
+                keyPoints: ['手腕', '肘部', '膝盖', '脚踝'],
+                feedbackRules: [
+                    { condition: (angles) => angles.elbow < 80, message: '肘部弯曲不足，建议增加屈肘角度' },
+                    { condition: (angles) => angles.elbow > 130, message: '肘部过于弯曲，建议放松手臂' },
+                    { condition: (angles) => angles.knee < 90, message: '膝盖弯曲过度，注意保护膝关节' },
+                    { condition: (angles) => angles.knee > 150, message: '膝盖过于伸直，建议降低重心' },
+                    { condition: (angles) => angles.waist > 70, message: '腰部过于前倾，注意保持平衡' }
+                ]
+            },
+            golf: {
+                name: '⛳ 高尔夫球',
+                keyAngles: ['spine', 'hip', 'knee', 'shoulder'],
+                idealAngles: {
+                    spine: { min: 30, max: 45, name: '脊柱倾斜' },
+                    hip: { min: 20, max: 40, name: '髋部旋转' },
+                    knee: { min: 100, max: 130, name: '膝盖微屈' },
+                    shoulder: { min: 70, max: 90, name: '肩部转动' }
+                },
+                keyPoints: ['脊柱角度', '髋部位置', '膝盖弯曲', '头部稳定'],
+                feedbackRules: [
+                    { condition: (angles) => angles.spine < 20, message: '脊柱过于直立，建议增加前倾角度' },
+                    { condition: (angles) => angles.spine > 55, message: '脊柱前倾过度，可能影响击球稳定性' },
+                    { condition: (angles) => angles.hip < 15, message: '髋部旋转不足，建议增加转髋幅度' },
+                    { condition: (angles) => angles.knee < 90, message: '膝盖弯曲过度，建议站得更直一些' },
+                    { condition: (angles) => angles.shoulder < 60, message: '肩部转动不足，建议增加转肩幅度' }
+                ]
+            }
+        };
+
+        // 初始化 MediaPipe Pose
+        function initPose() {
+            pose = new Pose({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+                }
+            });
+
+            pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                minDetectionConfidence: minConfidence,
+                minTrackingConfidence: minConfidence
+            });
+
+            pose.onResults(onResults);
+        }
+
+        // 处理检测结果
+        function onResults(results) {
+            // 设置画布尺寸
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+
+            // 清除画布
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            // 镜像模式
+            if (mirrorMode) {
+                canvasCtx.translate(canvasElement.width, 0);
+                canvasCtx.scale(-1, 1);
+            }
+
+            // 绘制视频帧
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks) {
+                // 绘制姿势
+                if (displayOptions.skeleton) {
+                    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                        {color: '#00d4ff', lineWidth: 3});
+                }
+
+                if (displayOptions.landmarks) {
+                    drawLandmarks(canvasCtx, results.poseLandmarks,
+                        {color: '#ff006e', lineWidth: 2, radius: 5});
+                }
+
+                // 分析姿势
+                analyzePose(results.poseLandmarks);
+
+                // 显示分析区域
+                if (showZones) {
+                    drawAnalysisZones(canvasCtx, results.poseLandmarks);
+                }
+
+                // 显示角度
+                if (displayOptions.angles) {
+                    drawAngles(canvasCtx, results.poseLandmarks);
+                }
+            }
+
+            canvasCtx.restore();
+        }
+
+        // 计算角度
+        function calculateAngle(a, b, c) {
+            const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(radians * 180.0 / Math.PI);
+            if (angle > 180.0) {
+                angle = 360 - angle;
+            }
+            return angle;
+        }
+
+        // 分析姿势
+        function analyzePose(landmarks) {
+            const config = sportConfigs[currentSport];
+            const angles = {};
+
+            if (currentSport === 'tabletennis') {
+                // 乒乓球特定角度计算
+                // 肘部角度 (肩膀-肘部-手腕)
+                angles.elbow = calculateAngle(
+                    landmarks[11], // 左肩
+                    landmarks[13], // 左肘
+                    landmarks[15]  // 左手腕
+                );
+
+                // 膝盖角度 (髋-膝-踝)
+                angles.knee = calculateAngle(
+                    landmarks[23], // 左髋
+                    landmarks[25], // 左膝
+                    landmarks[27]  // 左踝
+                );
+
+                // 腰部角度 (肩部到髋部的倾斜)
+                angles.waist = Math.abs(Math.atan2(
+                    landmarks[23].y - landmarks[11].y,
+                    landmarks[23].x - landmarks[11].x
+                ) * 180 / Math.PI);
+
+                // 肩部角度
+                angles.shoulder = calculateAngle(
+                    landmarks[13], // 左肘
+                    landmarks[11], // 左肩
+                    landmarks[23]  // 左髋
+                );
+
+            } else if (currentSport === 'golf') {
+                // 高尔夫球特定角度计算
+                // 脊柱倾斜角度
+                angles.spine = Math.abs(Math.atan2(
+                    landmarks[11].y - landmarks[23].y,
+                    landmarks[11].x - landmarks[23].x
+                ) * 180 / Math.PI - 90);
+
+                // 髋部旋转角度
+                angles.hip = calculateAngle(
+                    landmarks[11], // 左肩
+                    landmarks[23], // 左髋
+                    landmarks[24]  // 右髋
+                );
+
+                // 膝盖微屈角度
+                angles.knee = 180 - calculateAngle(
+                    landmarks[23], // 左髋
+                    landmarks[25], // 左膝
+                    landmarks[27]  // 左踝
+                );
+
+                // 肩部转动角度
+                angles.shoulder = calculateAngle(
+                    landmarks[12], // 右肩
+                    landmarks[11], // 左肩
+                    landmarks[23]  // 左髋
+                );
+            }
+
+            // 更新分数和反馈
+            updateScores(angles, config);
+            updateFeedback(angles, config);
+            updateKeyPoints(landmarks, angles);
+        }
+
+        // 更新分数显示
+        function updateScores(angles, config) {
+            const scoresContainer = document.getElementById('sportSpecificScores');
+            let totalScore = 0;
+            let scoreCount = 0;
+
+            let scoresHTML = '';
+            for (const [key, angle] of Object.entries(angles)) {
+                const ideal = config.idealAngles[key];
+                if (ideal) {
+                    const diff = Math.abs(angle - (ideal.min + ideal.max) / 2);
+                    const range = (ideal.max - ideal.min) / 2;
+                    const score = Math.max(0, 100 - (diff / range) * 50);
+                    totalScore += score;
+                    scoreCount++;
+
+                    const color = score > 80 ? '#44ff44' : score > 60 ? '#ffaa00' : '#ff4444';
+
+                    scoresHTML += `
+                        <div class="pose-score">
+                            <span class="score-label">${ideal.name}</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: ${score}%; background: ${color};"></div>
+                            </div>
+                            <span class="score-value">${Math.round(score)}%</span>
+                        </div>
+                    `;
+                }
+            }
+
+            scoresContainer.innerHTML = scoresHTML;
+
+            // 更新总体分数
+            const overallScore = scoreCount > 0 ? totalScore / scoreCount : 0;
+            document.getElementById('overallScore').style.width = `${overallScore}%`;
+            document.getElementById('overallScoreValue').textContent = `${Math.round(overallScore)}%`;
+        }
+
+        // 更新反馈
+        function updateFeedback(angles, config) {
+            const feedbackList = document.getElementById('feedbackList');
+            const feedbacks = [];
+
+            config.feedbackRules.forEach(rule => {
+                if (rule.condition(angles)) {
+                    feedbacks.push(rule.message);
+                }
+            });
+
+            if (feedbacks.length === 0) {
+                feedbacks.push('姿势良好，继续保持！');
+            }
+
+            feedbackList.innerHTML = feedbacks.map(f => `<li>${f}</li>`).join('');
+        }
+
+        // 更新关键点数据
+        function updateKeyPoints(landmarks, angles) {
+            const keyPointsContainer = document.getElementById('keyPoints');
+            const config = sportConfigs[currentSport];
+
+            let pointsHTML = '';
+            config.keyPoints.forEach((point, index) => {
+                const angleKey = Object.keys(angles)[index];
+                const value = angleKey ? Math.round(angles[angleKey]) + '°' : '检测中';
+                pointsHTML += `
+                    <div class="key-point">
+                        <div class="key-point-label">${point}</div>
+                        <div class="key-point-value">${value}</div>
+                    </div>
+                `;
+            });
+
+            keyPointsContainer.innerHTML = pointsHTML;
+        }
+
+        // 绘制分析区域
+        function drawAnalysisZones(ctx, landmarks) {
+            const config = sportConfigs[currentSport];
+            
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+
+            if (currentSport === 'tabletennis') {
+                // 绘制乒乓球姿势分析区域
+                // 击球区域
+                ctx.beginPath();
+                ctx.arc(
+                    landmarks[15].x * canvasElement.width,
+                    landmarks[15].y * canvasElement.height,
+                    50, 0, 2 * Math.PI
+                );
+                ctx.stroke();
+
+                // 重心区域
+                ctx.beginPath();
+                ctx.arc(
+                    landmarks[23].x * canvasElement.width,
+                    landmarks[23].y * canvasElement.height,
+                    30, 0, 2 * Math.PI
+                );
+                ctx.stroke();
+            } else if (currentSport === 'golf') {
+                // 绘制高尔夫球姿势分析区域
+                // 脊柱线
+                ctx.beginPath();
+                ctx.moveTo(landmarks[11].x * canvasElement.width, landmarks[11].y * canvasElement.height);
+                ctx.lineTo(landmarks[23].x * canvasElement.width, landmarks[23].y * canvasElement.height);
+                ctx.stroke();
+
+                // 髋部旋转区域
+                ctx.beginPath();
+                ctx.arc(
+                    landmarks[23].x * canvasElement.width,
+                    landmarks[23].y * canvasElement.height,
+                    40, 0, 2 * Math.PI
+                );
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        // 绘制角度
+        function drawAngles(ctx, landmarks) {
+            ctx.save();
+            ctx.fillStyle = '#fff';
+            ctx.font = '14px Arial';
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 2;
+
+            // 在关键点旁边显示角度值
+            const keyIndices = [11, 13, 15, 23, 25, 27];
+            keyIndices.forEach(index => {
+                const x = landmarks[index].x * canvasElement.width;
+                const y = landmarks[index].y * canvasElement.height;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                ctx.fillText(`${index}`, x + 10, y);
+            });
+
+            ctx.restore();
+        }
+
+        // 初始化摄像头
+        async function initCamera() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                const cameraSelect = document.getElementById('cameraSelect');
+                cameraSelect.innerHTML = '<option value="">默认摄像头</option>';
+                
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `摄像头 ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        if (isRunning && pose) {
+                            await pose.send({image: videoElement});
+                        }
+                    },
+                    width: 1280,
+                    height: 720
+                });
+
+                await camera.start();
+                loadingElement.style.display = 'none';
+            } catch (error) {
+                console.error('摄像头初始化失败:', error);
+                loadingElement.textContent = '摄像头初始化失败，请检查权限设置';
+            }
+        }
+
+        // 事件监听器
+        document.addEventListener('DOMContentLoaded', () => {
+            initPose();
+            initCamera();
+
+            // 运动切换
+            document.querySelectorAll('.sport-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.sport-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentSport = btn.dataset.sport;
+                    document.getElementById('analysisTitle').textContent = sportConfigs[currentSport].name + '姿势分析';
+                });
+            });
+
+            // 开始/停止检测
+            document.getElementById('startBtn').addEventListener('click', () => {
+                isRunning = !isRunning;
+                document.getElementById('startBtn').textContent = isRunning ? '⏹ 停止检测' : '🚀 开始检测';
+            });
+
+            // 置信度滑块
+            document.getElementById('confidenceSlider').addEventListener('input', (e) => {
+                minConfidence = parseFloat(e.target.value);
+                document.getElementById('confidenceValue').textContent = minConfidence;
+                if (pose) {
+                    pose.setOptions({
+                        minDetectionConfidence: minConfidence,
+                        minTrackingConfidence: minConfidence
+                    });
+                }
+            });
+
+            // 显示选项
+            document.querySelectorAll('.skeleton-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    btn.classList.toggle('active');
+                    displayOptions[btn.dataset.option] = btn.classList.contains('active');
+                });
+            });
+
+            // 分析区域显示
+            document.getElementById('showZones').addEventListener('click', () => {
+                showZones = !showZones;
+                document.getElementById('showZones').classList.toggle('active');
+            });
+
+            // 镜像模式
+            document.getElementById('mirrorMode').addEventListener('click', () => {
+                mirrorMode = !mirrorMode;
+                document.getElementById('mirrorMode').classList.toggle('active');
+            });
+
+            // 摄像头切换
+            document.getElementById('cameraSelect').addEventListener('change', async (e) => {
+                if (camera) {
+                    await camera.stop();
+                }
+                
+                const constraints = {
+                    video: {
+                        deviceId: e.target.value ? { exact: e.target.value } : undefined,
+                        width: 1280,
+                        height: 720
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = stream;
+            });
+        });
+    </script>
+</body>
+</html>

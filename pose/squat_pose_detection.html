@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="squat.title">Squat Pose Detection Training System</title>
+    <script src="i18n.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #1a1a3e 50%, #0d1b2a 100%);
+            min-height: 100vh;
+            color: #fff;
+            user-select: none;
+        }
+        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+        /* ======== Header ======== */
+        header { text-align: center; padding: 20px 0; }
+        header h1 {
+            font-size: 2.2em;
+            background: linear-gradient(45deg, #00d4ff, #ff6600);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        header .subtitle { color: #888; margin-top: 6px; font-size: 0.9em; }
+
+        /* ======== 主布局 ======== */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        /* ======== 左侧：视频区 ======== */
+        .video-panel {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 20px;
+        }
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/10;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .video-wrapper video {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .video-wrapper canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 2;
+        }
+        .video-wrapper .no-camera {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            text-align: center;
+            color: #666;
+            font-size: 1.1em;
+            pointer-events: none;
+        }
+        .video-wrapper .phase-indicator {
+            position: absolute; top: 16px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.95em;
+            font-weight: 700;
+            pointer-events: none;
+            transition: all 0.3s;
+        }
+        .phase-standing { background: rgba(0,212,255,0.3); color: #00d4ff; }
+        .phase-descending { background: rgba(255,170,0,0.3); color: #ffaa00; }
+        .phase-bottom { background: rgba(0,204,102,0.3); color: #00cc66; }
+        .phase-ascending { background: rgba(255,102,0,0.3); color: #ff6600; }
+        .phase-none { background: rgba(128,128,128,0.3); color: #888; }
+
+        .controls {
+            display: flex; gap: 12px; justify-content: center;
+            margin-top: 16px; flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 24px; border: none; border-radius: 25px;
+            font-size: 0.9em; font-weight: 600; cursor: pointer;
+            transition: all 0.3s; display: flex; align-items: center; gap: 6px;
+        }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-start { background: linear-gradient(45deg, #00cc66, #00d4ff); color: #0a0a1a; }
+        .btn-start:hover:not(:disabled) { box-shadow: 0 0 20px rgba(0,204,102,0.4); }
+        .btn-stop { background: #ff4444; color: #fff; }
+        .btn-stop:hover:not(:disabled) { box-shadow: 0 0 20px rgba(255,68,68,0.4); }
+        .btn-mode {
+            background: transparent; border: 1px solid #2a2a5e; color: #aaa;
+        }
+        .btn-mode:hover:not(:disabled) { border-color: #00d4ff; color: #00d4ff; }
+        .btn-mode.active { border-color: #00d4ff; color: #00d4ff; background: rgba(0,212,255,0.1); }
+
+        /* ======== 右侧：数据面板 ======== */
+        .data-panel {
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            padding: 18px;
+        }
+        .card h3 {
+            font-size: 0.95em;
+            color: #00d4ff;
+            margin-bottom: 12px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        /* 计数器 */
+        .counter-row {
+            display: flex; justify-content: space-around;
+            text-align: center;
+        }
+        .counter-item .num {
+            font-size: 2.5em; font-weight: 700;
+            background: linear-gradient(45deg, #00d4ff, #00cc66);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .counter-item .label { font-size: 0.78em; color: #888; margin-top: 4px; }
+
+        /* 角度显示 */
+        .angle-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .angle-name { font-size: 0.85em; color: #aaa; }
+        .angle-value {
+            font-size: 0.95em; font-weight: 600;
+            font-family: 'Consolas', monospace;
+            min-width: 60px; text-align: right;
+        }
+        .angle-bar {
+            flex: 1; height: 6px; border-radius: 3px;
+            background: #1a1a3e; margin: 0 10px;
+            overflow: hidden;
+        }
+        .angle-bar-fill {
+            height: 100%; border-radius: 3px;
+            transition: width 0.3s, background 0.3s;
+        }
+
+        /* 标准参考 */
+        .ref-item {
+            display: flex; justify-content: space-between;
+            padding: 5px 0; font-size: 0.83em;
+        }
+        .ref-item .label { color: #888; }
+        .ref-item .value { color: #00d4ff; font-family: 'Consolas', monospace; }
+
+        /* 反馈 */
+        .feedback-list {
+            max-height: 200px; overflow-y: auto;
+        }
+        .feedback-item {
+            padding: 8px 12px; margin: 4px 0;
+            border-radius: 8px; font-size: 0.83em;
+            border-left: 3px solid;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .fb-good { background: rgba(0,204,102,0.1); border-color: #00cc66; color: #00cc66; }
+        .fb-warn { background: rgba(255,170,0,0.1); border-color: #ffaa00; color: #ffaa00; }
+        .fb-bad { background: rgba(255,68,68,0.1); border-color: #ff4444; color: #ff4444; }
+
+        /* 姿势示意图 */
+        .squat-diagram {
+            display: flex; gap: 12px; justify-content: center;
+        }
+        .diagram-box {
+            flex: 1; text-align: center;
+            padding: 10px; border-radius: 10px;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer; transition: all 0.3s;
+        }
+        .diagram-box:hover { border-color: #00d4ff; }
+        .diagram-box.active { border-color: #00d4ff; background: rgba(0,212,255,0.08); }
+        .diagram-icon { font-size: 2.5em; margin-bottom: 6px; }
+        .diagram-label { font-size: 0.8em; color: #aaa; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9em;
+            animation: slideDown 0.3s ease;
+        }
+        .toast.info { background: #00d4ff; color: #0a0a1a; }
+        .toast.success { background: #00cc66; color: #fff; }
+        .toast.error { background: #ff4444; color: #fff; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        /* License弹窗 */
+        .license-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .license-overlay.hidden { display: none; }
+        .license-modal {
+            background: #111133; border: 1px solid #00d4ff;
+            border-radius: 16px; padding: 40px; text-align: center;
+            max-width: 450px; width: 90%;
+        }
+        .license-modal h2 { color: #00d4ff; margin-bottom: 16px; }
+        .license-modal p { color: #aaa; margin: 8px 0; font-size: 0.9em; }
+        .license-modal input {
+            width: 100%; padding: 12px; margin: 16px 0;
+            border: 1px solid #2a2a5e; border-radius: 8px;
+            background: #0a0a2e; color: #fff; font-size: 1em;
+            font-family: 'Consolas', monospace; text-align: center; letter-spacing: 2px;
+        }
+        .license-modal input:focus { outline: none; border-color: #00d4ff; }
+        .license-modal .btn-verify {
+            width: 100%; padding: 12px; background: #00d4ff; color: #0a0a1a;
+            border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer;
+        }
+        .license-status { margin-top: 10px; font-size: 0.85em; }
+        .license-status.valid { color: #00cc66; }
+        .license-status.invalid { color: #ff4444; }
+
+        @media (max-width: 900px) {
+            .main-layout { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- License验证弹窗 -->
+    <div class="license-overlay hidden" id="licenseOverlay">
+        <div class="license-modal">
+            <h2 data-i18n="license.title">520mus License Verification</h2>
+            <div id="licenseInfo"><p data-i18n="license.enter">Please enter license key</p></div>
+            <input type="text" id="licenseInput" data-i18n-placeholder="license.placeholder" placeholder="520MUS-XXXX-XXXX-XXXX-XXXX" autocomplete="off">
+            <button class="btn-verify" id="verifyBtn" data-i18n="license.verify">Verify License</button>
+            <div class="license-status hidden" id="licenseStatus"></div>
+            <div id="trialCountdown" class="hidden" style="color:#888;font-size:0.8em;margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <div id="mainContainer" class="container" style="display:none;">
+        <header>
+            <h1 data-i18n="squat.title">Squat Pose Detection Training System</h1>
+            <p class="subtitle" data-i18n="squat.subtitle">Powered by 520mus | Side + Front Dual-Angle Reference | Real-time Feedback</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- 左侧：视频区 -->
+            <div class="video-panel">
+                <div class="video-wrapper" id="videoWrapper">
+                    <video id="cameraVideo" playsinline autoplay></video>
+                    <canvas id="poseCanvas"></canvas>
+                    <div class="phase-indicator phase-none" id="phaseIndicator" data-i18n="squat.ready">Ready</div>
+                    <div class="no-camera" id="noCamera">
+                        <div style="font-size:3em;margin-bottom:10px;">&#x1F4F7;</div>
+                        <div data-i18n="squat.msg_start_camera">Click "Start Training" to start camera</div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-start" id="btnStart" data-i18n="squat.start_training">Start Training</button>
+                    <button class="btn btn-stop" id="btnStop" disabled data-i18n="common.stop">Stop</button>
+                    <button class="btn btn-mode active" id="btnModeSide" data-mode="side" data-i18n="squat.side_view">Side View</button>
+                    <button class="btn btn-mode" id="btnModeFront" data-mode="front" data-i18n="squat.front_view">Front View</button>
+                </div>
+            </div>
+
+            <!-- 右侧：数据面板 -->
+            <div class="data-panel">
+                <!-- 标准参考图 -->
+                <div class="card">
+                    <h3 data-i18n="squat.ref_standard">&#x1F4D0; Standard Squat Reference</h3>
+                    <div class="squat-diagram">
+                        <div class="diagram-box active" id="diagramSide" data-view="side" onclick="switchReferenceView('side')">
+                            <div class="diagram-icon">&#x1F9CD;&#x27A1;&#xFE0F;</div>
+                            <div class="diagram-label" data-i18n="squat.ref_side">Side View</div>
+                        </div>
+                        <div class="diagram-box" id="diagramFront" data-view="front" onclick="switchReferenceView('front')">
+                            <div class="diagram-icon">&#x1F9CD;</div>
+                            <div class="diagram-label" data-i18n="squat.ref_front">Front View</div>
+                        </div>
+                    </div>
+                    <div id="referenceContent">
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_knee_target">Knee Angle Target</span><span class="value" data-i18n="squat.ref_80_100">80°-100° (Bottom)</span></div>
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_hip_target">Hip Angle Target</span><span class="value" data-i18n="squat.ref_60_85">60°-85° (Bottom)</span></div>
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_back_target">Back to Ground</span><span class="value" data-i18n="squat.ref_45_60">45°-60°</span></div>
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_knee_align">Knee Alignment</span><span class="value" data-i18n="squat.ref_align_toes">Aligned with toes</span></div>
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_heel">Heels</span><span class="value" data-i18n="squat.ref_heel">Heels Down</span></div>
+                        <div class="ref-item"><span class="label" data-i18n="squat.ref_depth">Squat Depth</span><span class="value" data-i18n="squat.ref_depth">Thigh Parallel to Ground</span></div>
+                    </div>
+                </div>
+
+                <!-- 计数与状态 -->
+                <div class="card">
+                    <h3 data-i18n="squat.stats">&#x1F3C6; Training Stats</h3>
+                    <div class="counter-row">
+                        <div class="counter-item">
+                            <div class="num" id="repCount">0</div>
+                            <div class="label" data-i18n="squat.reps">Reps</div>
+                        </div>
+                        <div class="counter-item">
+                            <div class="num" id="qualityScore">-</div>
+                            <div class="label" data-i18n="squat.quality">Quality Score</div>
+                        </div>
+                        <div class="counter-item">
+                            <div class="num" id="deepestAngle">-</div>
+                            <div class="label" data-i18n="squat.deepest">Deepest Angle</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 实时角度 -->
+                <div class="card">
+                    <h3 data-i18n="squat.realtime_angles">&#x1F4CF; Real-time Angle Measurement</h3>
+                    <div class="angle-row">
+                        <span class="angle-name" data-i18n="squat.left_knee">L-Knee (Hip-Knee-Ankle)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barLeftKnee" style="width:0%;background:#00d4ff;"></div></div>
+                        <span class="angle-value" id="valLeftKnee">--</span>
+                    </div>
+                    <div class="angle-row">
+                        <span class="angle-name" data-i18n="squat.right_knee">R-Knee (Hip-Knee-Ankle)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barRightKnee" style="width:0%;background:#00d4ff;"></div></div>
+                        <span class="angle-value" id="valRightKnee">--</span>
+                    </div>
+                    <div class="angle-row">
+                        <span class="angle-name" data-i18n="squat.left_hip">L-Hip (Shoulder-Hip-Knee)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barLeftHip" style="width:0%;background:#ffaa00;"></div></div>
+                        <span class="angle-value" id="valLeftHip">--</span>
+                    </div>
+                    <div class="angle-row">
+                        <span class="angle-name" data-i18n="squat.right_hip">R-Hip (Shoulder-Hip-Knee)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barRightHip" style="width:0%;background:#ffaa00;"></div></div>
+                        <span class="angle-value" id="valRightHip">--</span>
+                    </div>
+                    <div class="angle-row">
+                        <span class="angle-name" data-i18n="squat.back_angle">Back Angle (Vertical-ShoulderHip)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barBackAngle" style="width:0%;background:#ff6600;"></div></div>
+                        <span class="angle-value" id="valBackAngle">--</span>
+                    </div>
+                    <div class="angle-row" id="rowKneeAlign" style="display:none;">
+                        <span class="angle-name" data-i18n="squat.knee_align_front">Knee Alignment (Front)</span>
+                        <div class="angle-bar"><div class="angle-bar-fill" id="barKneeAlign" style="width:0%;background:#9b59b6;"></div></div>
+                        <span class="angle-value" id="valKneeAlign">--</span>
+                    </div>
+                </div>
+
+                <!-- 实时反馈 -->
+                <div class="card">
+                    <h3 data-i18n="squat.feedback">&#x1F4AC; Real-time Feedback</h3>
+                    <div class="feedback-list" id="feedbackList">
+                        <div class="feedback-item fb-good" data-i18n="squat.msg_waiting">Waiting to start training...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // License系统（与其他页面一致）
+        // ============================================
+        (function() {
+            const SECRET_KEY = '520mus.top_2024_pose_detection_secret';
+            const LICENSE_VALID_DAYS = 60;
+            const LICENSE_VALID_MS = LICENSE_VALID_DAYS * 24 * 60 * 60 * 1000;
+            const TRIAL_DAYS = 90;
+            const GRACE_PERIOD_DAYS = 31;
+            const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+            const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+
+            const STORAGE_KEYS = {
+                license: btoa('pd_lic_key_v1'),
+                installDate: btoa('pd_inst_date_v1'),
+                verified: btoa('pd_verified_v1'),
+                machineId: btoa('pd_machine_v1'),
+                licenseDate: btoa('pd_lic_date_v1')
+            };
+
+            const VALID_LICENSES = [
+                '520MUS-ABCD-1234-EFGH-5678',
+                '520MUS-POS3-DETE-CTIO-N202',
+                '520MUS-TABL-ETEN-NIS-GO24',
+                '520MUS-GOLF-SWNG-POSE-2024',
+                '520MUS-BOWL-INGS-PEED-2024',
+                '520MUS-TAIJ-QUAN-POSE-2024',
+                '520MUS-UNIF-IED-ENTR-Y202',
+                '520MUS-SQUA-TTRA-INER-2024'
+            ];
+
+            function simpleHash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                    hash = hash | 0;
+                }
+                const h1 = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+                let hash2 = 0x6a09e667;
+                for (let i = 0; i < str.length; i++) {
+                    hash2 ^= str.charCodeAt(i);
+                    hash2 = ((hash2 << 7) | (hash2 >>> 25)) >>> 0;
+                }
+                const h2 = Math.abs(hash2).toString(16).toUpperCase().padStart(8, '0');
+                return h1 + h2;
+            }
+
+            function genMachineId() {
+                const nav = window.navigator;
+                const screen = window.screen;
+                return btoa([nav.userAgent, nav.language, screen.width+'x'+screen.height, screen.colorDepth, new Date().getTimezoneOffset()].join('|')).substring(0, 32);
+            }
+
+            function getInstallDate() {
+                const d = localStorage.getItem(STORAGE_KEYS.installDate);
+                if (!d) { const now = Date.now().toString(); localStorage.setItem(STORAGE_KEYS.installDate, btoa(now)); return now; }
+                try { return atob(d); } catch(e) { return Date.now().toString(); }
+            }
+
+            function checkTrialStatus() {
+                const installDate = parseInt(getInstallDate());
+                const elapsed = Date.now() - installDate;
+                return {
+                    isTrial: elapsed < TRIAL_MS,
+                    inGracePeriod: elapsed < GRACE_PERIOD_MS,
+                    isExpired: elapsed >= TRIAL_MS,
+                    remainingDays: Math.max(0, Math.ceil((TRIAL_MS - elapsed) / (24*60*60*1000))),
+                    remainingMs: Math.max(0, TRIAL_MS - elapsed)
+                };
+            }
+
+            function verifyLicense(license) {
+                const upper = license.toUpperCase().trim();
+                if (!/^520MUS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(upper)) {
+                    return { valid: false, message: I18N.t('license.format_error') };
+                }
+                if (VALID_LICENSES.includes(upper)) {
+                    return { valid: true, message: I18N.t('license.valid') };
+                }
+                const hash = simpleHash(genMachineId() + '_' + SECRET_KEY + '_2024');
+                const expected = '520MUS-' + hash.substring(0,4) + '-' + hash.substring(4,8) + '-' + hash.substring(8,12) + '-' + hash.substring(12,16);
+                if (upper === expected) {
+                    return { valid: true, message: I18N.t('license.valid') };
+                }
+                return { valid: false, message: I18N.t('license.invalid') };
+            }
+
+            function getSavedLicense() {
+                try { return atob(localStorage.getItem(STORAGE_KEYS.license) || ''); } catch(e) { return ''; }
+            }
+            function saveLicense(license) {
+                localStorage.setItem(STORAGE_KEYS.license, btoa(license));
+                localStorage.setItem(STORAGE_KEYS.verified, btoa('true'));
+                localStorage.setItem(STORAGE_KEYS.licenseDate, btoa(Date.now().toString()));
+            }
+            function isLicenseExpired() {
+                const d = localStorage.getItem(STORAGE_KEYS.licenseDate);
+                if (!d) return true;
+                return (Date.now() - parseInt(atob(d))) >= LICENSE_VALID_MS;
+            }
+            function isVerified() {
+                const v = localStorage.getItem(STORAGE_KEYS.verified);
+                if (!v || atob(v) !== 'true') return false;
+                if (isLicenseExpired()) {
+                    localStorage.removeItem(STORAGE_KEYS.verified);
+                    localStorage.removeItem(STORAGE_KEYS.licenseDate);
+                    return false;
+                }
+                return true;
+            }
+            function getLicenseRemainingDays() {
+                const d = localStorage.getItem(STORAGE_KEYS.licenseDate);
+                if (!d) return 0;
+                return Math.max(0, Math.ceil((LICENSE_VALID_MS - (Date.now() - parseInt(atob(d)))) / (24*60*60*1000)));
+            }
+
+            function showLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const info = document.getElementById('licenseInfo');
+                const countdown = document.getElementById('trialCountdown');
+                const ts = checkTrialStatus();
+                const lr = getLicenseRemainingDays();
+
+                if (ts.inGracePeriod && !isVerified()) { hideLicenseModal(); return; }
+                if (ts.isTrial && !isVerified()) {
+                    info.innerHTML = '<p>' + I18N.t('license.welcome') + '</p><p>' + I18N.t('license.trial_remaining', {days: ts.remainingDays}) + '</p><p style="font-size:0.85em;margin-top:10px;">' + I18N.t('license.contact') + '</p>';
+                    countdown.classList.remove('hidden');
+                    countdown.textContent = ts.remainingDays + I18N.t('common.days') + Math.floor((ts.remainingMs%(24*60*60*1000))/(60*60*1000)) + I18N.t('common.hours');
+                    setTimeout(() => hideLicenseModal(), 10000);
+                } else if (ts.isExpired && !isVerified()) {
+                    info.innerHTML = '<p>' + I18N.t('license.expired') + '</p><p>' + I18N.t('license.enter') + '</p>';
+                    countdown.classList.add('hidden');
+                } else if (isVerified()) {
+                    if (lr > 0 && lr <= 7) {
+                        info.innerHTML = '<p>' + I18N.t('license.expiring') + '</p><p>' + I18N.t('license.remaining') + ' <strong style="color:#00d4ff;">'+lr+I18N.t('common.days')+'</strong></p>';
+                        overlay.classList.remove('hidden');
+                        setTimeout(() => hideLicenseModal(), 5000);
+                        return;
+                    }
+                    hideLicenseModal(); return;
+                }
+                overlay.classList.remove('hidden');
+            }
+
+            function hideLicenseModal() {
+                document.getElementById('licenseOverlay').style.display = 'none';
+                document.getElementById('mainContainer').style.display = 'block';
+            }
+
+            function initLicenseSystem() {
+                if (getSavedLicense() && verifyLicense(getSavedLicense()).valid) { hideLicenseModal(); return; }
+                showLicenseModal();
+                document.getElementById('verifyBtn').addEventListener('click', function() {
+                    const input = document.getElementById('licenseInput').value.trim();
+                    const status = document.getElementById('licenseStatus');
+                    if (!input) { status.textContent = I18N.t('license.enter'); status.className = 'license-status invalid'; status.classList.remove('hidden'); return; }
+                    const result = verifyLicense(input);
+                    if (result.valid) {
+                        saveLicense(input);
+                        status.textContent = result.message;
+                        status.className = 'license-status valid';
+                        status.classList.remove('hidden');
+                        setTimeout(() => hideLicenseModal(), 1500);
+                    } else {
+                        status.textContent = result.message;
+                        status.className = 'license-status invalid';
+                        status.classList.remove('hidden');
+                    }
+                });
+                document.getElementById('licenseInput').addEventListener('keypress', function(e) { if (e.key==='Enter') document.getElementById('verifyBtn').click(); });
+            }
+
+            setInterval(() => {
+                const ts = checkTrialStatus();
+                if (ts.inGracePeriod) return;
+                if (!isVerified() && ts.isExpired) {
+                    document.getElementById('mainContainer').style.display = 'none';
+                    document.getElementById('licenseOverlay').style.display = 'flex';
+                    showLicenseModal();
+                }
+            }, 60000);
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initLicenseSystem);
+            } else { initLicenseSystem(); }
+        })();
+
+        // ============================================
+        // 深蹲检测核心逻辑
+        // ============================================
+        const POSE_CONNECTIONS = [
+            [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],[9,10],
+            [11,12],[11,13],[13,15],[12,14],[14,16],
+            [11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],
+            [27,29],[29,31],[28,30],[30,32],
+            [15,17],[15,19],[15,21],[16,18],[16,20],[16,22],[17,19]
+        ];
+
+        // 关键点索引
+        const L = { NOSE:0, L_SHOULDER:11, R_SHOULDER:12, L_HIP:23, R_HIP:24, L_KNEE:25, R_KNEE:26, L_ANKLE:27, R_ANKLE:28, L_HEEL:29, R_HEEL:30, L_FOOT:31, R_FOOT:32 };
+
+        // 深蹲阶段
+        const PHASE = { STANDING: 'standing', DESCENDING: 'descending', BOTTOM: 'bottom', ASCENDING: 'ascending' };
+
+        let pose = null, camera = null, isRunning = false;
+        let currentView = 'side'; // 'side' | 'front'
+        let repCount = 0;
+        let repState = { hasHitBottom: false, wasStanding: true };
+        let feedbackHistory = [];
+        let deepestAngleThisRep = 180;
+        let allDeepestAngles = [];
+
+        // DOM缓存
+        const videoEl = document.getElementById('cameraVideo');
+        const canvas = document.getElementById('poseCanvas');
+        const ctx = canvas.getContext('2d');
+        const phaseIndicator = document.getElementById('phaseIndicator');
+        const noCamera = document.getElementById('noCamera');
+
+        function showToast(msg, type) {
+            const old = document.querySelector('.toast');
+            if (old) old.remove();
+            const t = document.createElement('div');
+            t.className = 'toast ' + (type || 'info');
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2000);
+        }
+
+        // 计算三点角度
+        function calcAngle(a, b, c) {
+            if (!a || !b || !c) return null;
+            const ang = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let deg = Math.abs(ang * 180 / Math.PI);
+            if (deg > 180) deg = 360 - deg;
+            return deg;
+        }
+
+        // 计算背角（躯干与垂直线的夹角）
+        function calcBackAngle(shoulder, hip) {
+            if (!shoulder || !hip) return null;
+            const dx = hip.x - shoulder.x;
+            const dy = hip.y - shoulder.y;
+            const ang = Math.abs(Math.atan2(dx, dy) * 180 / Math.PI);
+            return ang;
+        }
+
+        // 计算膝盖对齐（正面视角：膝关节内外偏移）
+        function calcKneeAlignment(hip, knee, ankle) {
+            if (!hip || !knee || !ankle) return null;
+            // 计算髋-踝连线与膝-踝连线的横向偏差
+            const hipToAnkleDx = ankle.x - hip.x;
+            const kneeToAnkleDx = ankle.x - knee.x;
+            return Math.abs(hipToAnkleDx - kneeToAnkleDx) * 100; // 规范化偏差百分比
+        }
+
+        // 检测深蹲阶段
+        function detectPhase(kneeAngle) {
+            if (kneeAngle === null) return PHASE.STANDING;
+            if (kneeAngle > 150) return PHASE.STANDING;
+            if (kneeAngle < 100) return PHASE.BOTTOM;
+            if (kneeAngle >= 100 && kneeAngle <= 150) {
+                // 需要根据历史判断是下降还是上升
+                return PHASE.DESCENDING; // 默认
+            }
+            return PHASE.STANDING;
+        }
+
+        // 更新阶段指示器
+        let lastPhase = null;
+        let lastKneeAngle = 180;
+        function updatePhaseIndicator(kneeAngle) {
+            const phaseEl = phaseIndicator;
+            phaseEl.className = 'phase-indicator';
+
+            if (kneeAngle === null) {
+                phaseEl.classList.add('phase-none');
+                phaseEl.textContent = I18N.t('squat.not_detected');
+                lastPhase = null;
+                return;
+            }
+
+            let phase;
+            if (kneeAngle > 150) {
+                phase = PHASE.STANDING;
+            } else if (kneeAngle < 100) {
+                phase = PHASE.BOTTOM;
+            } else {
+                phase = kneeAngle > lastKneeAngle ? PHASE.ASCENDING : PHASE.DESCENDING;
+            }
+
+            // 更新rep计数
+            if (phase === PHASE.BOTTOM && repState.hasHitBottom === false) {
+                repState.hasHitBottom = true;
+                deepestAngleThisRep = Math.min(deepestAngleThisRep, kneeAngle);
+            }
+            if (phase === PHASE.STANDING && repState.hasHitBottom && repState.wasStanding === false) {
+                if (deepestAngleThisRep < 120) {
+                    repCount++;
+                    allDeepestAngles.push(deepestAngleThisRep);
+                    document.getElementById('repCount').textContent = repCount;
+                    document.getElementById('deepestAngle').textContent = Math.round(deepestAngleThisRep) + '°';
+                    updateQualityScore();
+                }
+                repState = { hasHitBottom: false, wasStanding: true };
+                deepestAngleThisRep = 180;
+            }
+            if (phase !== PHASE.STANDING && phase !== PHASE.BOTTOM) {
+                repState.wasStanding = false;
+            }
+
+            lastKneeAngle = kneeAngle;
+            lastPhase = phase;
+
+            switch (phase) {
+                case PHASE.STANDING:
+                    phaseEl.classList.add('phase-standing');
+                    phaseEl.textContent = I18N.t('squat.phase_standing');
+                    break;
+                case PHASE.DESCENDING:
+                    phaseEl.classList.add('phase-descending');
+                    phaseEl.textContent = I18N.t('squat.phase_descending');
+                    break;
+                case PHASE.BOTTOM:
+                    phaseEl.classList.add('phase-bottom');
+                    phaseEl.textContent = I18N.t('squat.phase_bottom');
+                    break;
+                case PHASE.ASCENDING:
+                    phaseEl.classList.add('phase-ascending');
+                    phaseEl.textContent = I18N.t('squat.phase_ascending');
+                    break;
+            }
+        }
+
+        function updateQualityScore() {
+            if (allDeepestAngles.length === 0) return;
+            let score = 0;
+            allDeepestAngles.forEach(a => {
+                if (a >= 80 && a <= 100) score += 100;
+                else if (a >= 70 && a <= 110) score += 80;
+                else if (a >= 60 && a <= 120) score += 50;
+                else score += 20;
+            });
+            score = Math.round(score / allDeepestAngles.length);
+            document.getElementById('qualityScore').textContent = score;
+        }
+
+        // 生成反馈
+        function generateFeedback(kneeAngle, hipAngle, backAngle, kneeAlign) {
+            const feedbacks = [];
+            const now = Date.now();
+
+            // 膝角反馈
+            if (kneeAngle !== null) {
+                if (kneeAngle < 100 && kneeAngle >= 80) {
+                    feedbacks.push({ type: 'good', msg: I18N.t('squat.msg_knee_perfect') });
+                } else if (kneeAngle < 100 && kneeAngle < 80) {
+                    feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_knee_too_deep') });
+                } else if (kneeAngle < 100 && kneeAngle > 100) {
+                    feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_knee_shallow') });
+                } else if (kneeAngle >= 100 && kneeAngle < 120) {
+                    feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_knee_go_deeper') });
+                }
+            }
+
+            // 髋角反馈
+            if (hipAngle !== null && kneeAngle !== null && kneeAngle < 110) {
+                if (hipAngle < 50) {
+                    feedbacks.push({ type: 'bad', msg: I18N.t('squat.msg_hip_small') });
+                } else if (hipAngle > 95) {
+                    feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_hip_large') });
+                }
+            }
+
+            // 背角反馈
+            if (backAngle !== null && kneeAngle !== null && kneeAngle < 110) {
+                if (backAngle > 65) {
+                    feedbacks.push({ type: 'bad', msg: I18N.t('squat.msg_back_forward') });
+                } else if (backAngle < 30) {
+                    feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_back_upright') });
+                }
+            }
+
+            // 膝盖对齐（正面）
+            if (kneeAlign !== null && kneeAlign > 8) {
+                feedbacks.push({ type: 'bad', msg: I18N.t('squat.msg_knee_valgus') });
+            } else if (kneeAlign !== null && kneeAlign > 5) {
+                feedbacks.push({ type: 'warn', msg: I18N.t('squat.msg_knee_slight_valgus') });
+            }
+
+            if (kneeAngle !== null && kneeAngle > 155) {
+                if (feedbacks.length === 0) {
+                    feedbacks.push({ type: 'good', msg: I18N.t('squat.msg_standing_good') });
+                }
+            }
+
+            if (feedbacks.length === 0 && kneeAngle !== null) {
+                feedbacks.push({ type: 'good', msg: I18N.t('squat.msg_form_good') });
+            }
+
+            // 更新DOM
+            const list = document.getElementById('feedbackList');
+            list.innerHTML = feedbacks.map(f => `<div class="feedback-item fb-${f.type}">${f.msg}</div>`).join('');
+
+            // 限制历史长度
+            feedbackHistory.push(...feedbacks);
+            if (feedbackHistory.length > 50) feedbackHistory = feedbackHistory.slice(-50);
+        }
+
+        // 绘制骨骼
+        function drawSkeleton(landmarks) {
+            if (!landmarks) return;
+            canvas.width = videoEl.videoWidth || 1280;
+            canvas.height = videoEl.videoHeight || 720;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const w = canvas.width, h = canvas.height;
+
+            // 获取关键点
+            const leftShoulder = landmarks[L.L_SHOULDER];
+            const rightShoulder = landmarks[L.R_SHOULDER];
+            const leftHip = landmarks[L.L_HIP];
+            const rightHip = landmarks[L.R_HIP];
+            const leftKnee = landmarks[L.L_KNEE];
+            const rightKnee = landmarks[L.R_KNEE];
+            const leftAnkle = landmarks[L.L_ANKLE];
+            const rightAnkle = landmarks[L.R_ANKLE];
+
+            // 绘制连接线
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            POSE_CONNECTIONS.forEach(([a, b]) => {
+                if (landmarks[a] && landmarks[b]) {
+                    ctx.beginPath();
+                    ctx.moveTo(landmarks[a].x * w, landmarks[a].y * h);
+                    ctx.lineTo(landmarks[b].x * w, landmarks[b].y * h);
+                    ctx.stroke();
+                }
+            });
+
+            // 绘制关键点
+            const highlightPoints = [L.L_SHOULDER, L.R_SHOULDER, L.L_HIP, L.R_HIP, L.L_KNEE, L.R_KNEE, L.L_ANKLE, L.R_ANKLE];
+            landmarks.forEach((lm, i) => {
+                const x = lm.x * w, y = lm.y * h;
+                const isHighlight = highlightPoints.includes(i);
+                ctx.beginPath();
+                ctx.arc(x, y, isHighlight ? 7 : 4, 0, 2 * Math.PI);
+                ctx.fillStyle = isHighlight ? '#ff6600' : '#ff006e';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            });
+
+            // 绘制角度标注线（侧面视角）
+            if (currentView === 'side' && rightKnee && rightHip && rightAnkle) {
+                const kx = rightKnee.x * w, ky = rightKnee.y * h;
+                const hx = rightHip.x * w, hy = rightHip.y * h;
+                const ax = rightAnkle.x * w, ay = rightAnkle.y * h;
+
+                // 膝角弧线
+                ctx.strokeStyle = 'rgba(0,212,255,0.8)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const r1 = 30;
+                const a1 = Math.atan2(hy - ky, hx - kx);
+                const a2 = Math.atan2(ay - ky, ax - kx);
+                ctx.arc(kx, ky, r1, a1, a2, false);
+                ctx.stroke();
+
+                // 髋角弧线
+                if (rightShoulder) {
+                    const sx = rightShoulder.x * w, sy = rightShoulder.y * h;
+                    ctx.strokeStyle = 'rgba(255,170,0,0.8)';
+                    ctx.beginPath();
+                    const r2 = 35;
+                    const a3 = Math.atan2(sy - hy, sx - hx);
+                    const a4 = Math.atan2(ky - hy, kx - hx);
+                    ctx.arc(hx, hy, r2, a3, a4, false);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 处理Pose结果
+        function onPoseResults(results) {
+            if (!results.poseLandmarks || !isRunning) return;
+
+            const lm = results.poseLandmarks;
+            const leftKnee = lm[L.L_KNEE], rightKnee = lm[L.R_KNEE];
+            const leftHip = lm[L.L_HIP], rightHip = lm[L.R_HIP];
+            const leftAnkle = lm[L.L_ANKLE], rightAnkle = lm[L.R_ANKLE];
+            const leftShoulder = lm[L.L_SHOULDER], rightShoulder = lm[L.R_SHOULDER];
+
+            // 计算角度
+            const leftKneeAngle = calcAngle(leftHip, leftKnee, leftAnkle);
+            const rightKneeAngle = calcAngle(rightHip, rightKnee, rightAnkle);
+            const leftHipAngle = calcAngle(leftShoulder, leftHip, leftKnee);
+            const rightHipAngle = calcAngle(rightShoulder, rightHip, rightKnee);
+            const backAngle = calcBackAngle(rightShoulder || leftShoulder, rightHip || leftHip);
+
+            // 正面膝盖对齐
+            let kneeAlign = null;
+            if (currentView === 'front') {
+                const lk = calcKneeAlignment(leftHip, leftKnee, leftAnkle);
+                const rk = calcKneeAlignment(rightHip, rightKnee, rightAnkle);
+                if (lk !== null && rk !== null) kneeAlign = Math.max(lk, rk);
+            }
+
+            // 使用主要侧（右侧优先，适合侧面站立）
+            const kneeAngle = rightKneeAngle || leftKneeAngle;
+            const hipAngle = rightHipAngle || leftHipAngle;
+
+            // 更新UI
+            updatePhaseIndicator(kneeAngle);
+            updateAngleDisplay(leftKneeAngle, rightKneeAngle, leftHipAngle, rightHipAngle, backAngle, kneeAlign);
+            generateFeedback(kneeAngle, hipAngle, backAngle, kneeAlign);
+
+            // 绘制骨骼
+            drawSkeleton(lm);
+        }
+
+        function updateAngleDisplay(lk, rk, lh, rh, back, kneeAlign) {
+            const setAngle = (id, val, barId, min, max) => {
+                const el = document.getElementById(id);
+                if (val === null) { el.textContent = '--'; return; }
+                el.textContent = Math.round(val) + '°';
+                const pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+                document.getElementById(barId).style.width = pct + '%';
+                // 颜色：膝角80-100为绿，越远越红
+                if (id.includes('Knee')) {
+                    const diff = Math.abs(val - 90);
+                    if (diff < 10) document.getElementById(barId).style.background = '#00cc66';
+                    else if (diff < 20) document.getElementById(barId).style.background = '#ffaa00';
+                    else document.getElementById(barId).style.background = '#ff4444';
+                } else if (id.includes('Hip')) {
+                    const diff = Math.abs(val - 70);
+                    if (diff < 15) document.getElementById(barId).style.background = '#00cc66';
+                    else if (diff < 25) document.getElementById(barId).style.background = '#ffaa00';
+                    else document.getElementById(barId).style.background = '#ff4444';
+                } else if (id.includes('Back')) {
+                    const diff = Math.abs(val - 50);
+                    if (diff < 15) document.getElementById(barId).style.background = '#00cc66';
+                    else if (diff < 25) document.getElementById(barId).style.background = '#ffaa00';
+                    else document.getElementById(barId).style.background = '#ff4444';
+                }
+            };
+
+            setAngle('valLeftKnee', lk, 'barLeftKnee', 40, 180);
+            setAngle('valRightKnee', rk, 'barRightKnee', 40, 180);
+            setAngle('valLeftHip', lh, 'barLeftHip', 30, 150);
+            setAngle('valRightHip', rh, 'barRightHip', 30, 150);
+            setAngle('valBackAngle', back, 'barBackAngle', 0, 90);
+
+            // 膝盖对齐
+            document.getElementById('rowKneeAlign').style.display = currentView === 'front' ? 'flex' : 'none';
+            if (kneeAlign !== null) {
+                document.getElementById('valKneeAlign').textContent = kneeAlign.toFixed(1) + '%';
+                document.getElementById('barKneeAlign').style.width = Math.min(100, kneeAlign * 8) + '%';
+                document.getElementById('barKneeAlign').style.background = kneeAlign > 8 ? '#ff4444' : kneeAlign > 5 ? '#ffaa00' : '#00cc66';
+            } else {
+                document.getElementById('valKneeAlign').textContent = '--';
+                document.getElementById('barKneeAlign').style.width = '0%';
+            }
+        }
+
+        function switchReferenceView(view) {
+            currentView = view;
+            document.getElementById('diagramSide').classList.toggle('active', view === 'side');
+            document.getElementById('diagramFront').classList.toggle('active', view === 'front');
+            document.getElementById('btnModeSide').classList.toggle('active', view === 'side');
+            document.getElementById('btnModeFront').classList.toggle('active', view === 'front');
+
+            const refContent = document.getElementById('referenceContent');
+            if (view === 'side') {
+                refContent.innerHTML = `
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_knee_target">${I18N.t('squat.ref_knee_target')}</span><span class="value" data-i18n="squat.ref_80_100">${I18N.t('squat.ref_80_100')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_hip_target">${I18N.t('squat.ref_hip_target')}</span><span class="value" data-i18n="squat.ref_60_85">${I18N.t('squat.ref_60_85')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_back_target">${I18N.t('squat.ref_back_target')}</span><span class="value" data-i18n="squat.ref_45_60">${I18N.t('squat.ref_45_60')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_depth">${I18N.t('squat.ref_depth')}</span><span class="value" data-i18n="squat.ref_depth">${I18N.t('squat.ref_depth')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_heel">${I18N.t('squat.ref_heel')}</span><span class="value" data-i18n="squat.ref_heel">${I18N.t('squat.ref_heel')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_heel">${I18N.t('squat.ref_heel')}</span><span class="value" data-i18n="squat.ref_heel">${I18N.t('squat.ref_heel')}</span></div>
+                `;
+            } else {
+                refContent.innerHTML = `
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_stance">${I18N.t('squat.ref_stance')}</span><span class="value" data-i18n="squat.ref_shoulder_width">${I18N.t('squat.ref_shoulder_width')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_toe_out">${I18N.t('squat.ref_toe_out')}</span><span class="value" data-i18n="squat.ref_15_30">${I18N.t('squat.ref_15_30')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_knee_align">${I18N.t('squat.ref_knee_align')}</span><span class="value" data-i18n="squat.ref_align_toes">${I18N.t('squat.ref_align_toes')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_shoulder_level">${I18N.t('squat.ref_shoulder_level')}</span><span class="value" data-i18n="squat.ref_shoulder_level">${I18N.t('squat.ref_shoulder_level')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_hip_level">${I18N.t('squat.ref_hip_level')}</span><span class="value" data-i18n="squat.ref_hip_level">${I18N.t('squat.ref_hip_level')}</span></div>
+                    <div class="ref-item"><span class="label" data-i18n="squat.ref_weight">${I18N.t('squat.ref_weight')}</span><span class="value" data-i18n="squat.ref_weight">${I18N.t('squat.ref_weight')}</span></div>
+                `;
+            }
+        }
+
+        // 初始化摄像头
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 1280, height: 720, facingMode: 'user' }
+                });
+                videoEl.srcObject = stream;
+                camera = new Camera(videoEl, {
+                    onFrame: async () => { if (isRunning && pose) await pose.send({ image: videoEl }); },
+                    width: 1280, height: 720
+                });
+                await camera.start();
+            } catch (e) {
+                console.error('摄像头初始化失败:', e);
+                showToast(I18N.t('squat.msg_camera_error'), 'error');
+            }
+        }
+
+        async function initPose() {
+            pose = new Pose({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+            pose.setOptions({
+                modelComplexity: 1, smoothLandmarks: true,
+                enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5
+            });
+            pose.onResults(onPoseResults);
+        }
+
+        async function startTraining() {
+            if (!pose) await initPose();
+            if (!camera) await initCamera();
+            isRunning = true;
+            repCount = 0; repState = { hasHitBottom: false, wasStanding: true };
+            deepestAngleThisRep = 180; allDeepestAngles = [];
+            document.getElementById('repCount').textContent = '0';
+            document.getElementById('qualityScore').textContent = '-';
+            document.getElementById('deepestAngle').textContent = '-';
+            document.getElementById('noCamera').style.display = 'none';
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            showToast(I18N.t('squat.msg_training_started'), 'success');
+        }
+
+        function stopTraining() {
+            isRunning = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            phaseIndicator.className = 'phase-indicator phase-none';
+            phaseIndicator.textContent = I18N.t('common.stop');
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            document.getElementById('feedbackList').innerHTML = '<div class="feedback-item fb-good">' + I18N.t('squat.msg_training_stopped') + '</div>';
+            showToast(I18N.t('squat.msg_training_stopped'), 'info');
+        }
+
+        // 按钮事件
+        document.getElementById('btnStart').addEventListener('click', startTraining);
+        document.getElementById('btnStop').addEventListener('click', stopTraining);
+        document.getElementById('btnModeSide').addEventListener('click', () => switchReferenceView('side'));
+        document.getElementById('btnModeFront').addEventListener('click', () => switchReferenceView('front'));
+
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 's' && !isRunning) { e.preventDefault(); startTraining(); }
+            else if (e.key === 'q' && isRunning) { e.preventDefault(); stopTraining(); }
+            else if (e.key === '1') { e.preventDefault(); switchReferenceView('side'); }
+            else if (e.key === '2') { e.preventDefault(); switchReferenceView('front'); }
+        });
+    </script>
+</body>
+</html>

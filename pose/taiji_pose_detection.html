@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="taiji.title">Tai Chi Pose Detection System</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .video-container {
+            position: relative;
+            background: #0a0a0a;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+        }
+        
+        .input_video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .pose-display {
+            background: linear-gradient(135deg, rgba(30, 60, 114, 0.9) 0%, rgba(42, 82, 152, 0.9) 100%);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            border: 2px solid #ffd700;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.2);
+        }
+        
+        .pose-display h3 {
+            color: #ffd700;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .current-pose {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #fff;
+            margin: 15px 0;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        
+        .pose-confidence {
+            font-size: 1.2em;
+            color: #aaa;
+        }
+        
+        .pose-flow-indicator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+        
+        .flow-step {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            transition: all 0.3s ease;
+        }
+        
+        .flow-step.active {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            border-color: #ffd700;
+            color: #1e3c72;
+            font-weight: bold;
+            transform: scale(1.2);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        
+        .flow-step.completed {
+            background: rgba(0, 255, 100, 0.3);
+            border-color: #44ff44;
+        }
+        
+        .flow-arrow {
+            color: #ffd700;
+            font-size: 1.5em;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #aaa;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            cursor: pointer;
+        }
+        
+        .start-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #1e3c72;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+        }
+        
+        .toggle-btn {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1em;
+        }
+        
+        .toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .toggle-btn.active {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #1e3c72;
+        }
+        
+        .analysis-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+        
+        .analysis-panel h3 {
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+        
+        .pose-score {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+        
+        .score-label {
+            flex: 1;
+            font-size: 0.9em;
+        }
+        
+        .score-bar {
+            flex: 2;
+            height: 10px;
+            background: #333;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+        
+        .score-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+        
+        .score-value {
+            width: 50px;
+            text-align: right;
+            font-weight: bold;
+        }
+        
+        .feedback {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 215, 0, 0.1);
+            border-left: 4px solid #ffd700;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .feedback h4 {
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+        
+        .feedback ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .feedback li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .feedback li:before {
+            content: "☯";
+            position: absolute;
+            left: 0;
+            color: #ffd700;
+        }
+        
+        .key-points {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .key-point {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .key-point-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .key-point-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2em;
+            color: #ffd700;
+        }
+        
+        .pose-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .pose-btn {
+            padding: 10px;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.85em;
+        }
+        
+        .pose-btn:hover, .pose-btn.active {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            border-color: #ffd700;
+            color: #1e3c72;
+        }
+        
+        .breathing-indicator {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 215, 0, 0.3) 0%, transparent 70%);
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            animation: breathe 4s ease-in-out infinite;
+        }
+        
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.3); opacity: 1; }
+        }
+        
+        .stability-meter {
+            margin-top: 15px;
+        }
+        
+        .stability-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        
+        /* LICENSE验证弹窗样式 */
+        .license-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .license-modal {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border: 2px solid #ffd700;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 0 50px rgba(255, 215, 0, 0.3);
+        }
+        
+        .license-modal h2 {
+            color: #ffd700;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .license-modal .icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        .license-input {
+            width: 100%;
+            padding: 15px;
+            margin: 15px 0;
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-size: 1.1em;
+            text-align: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .license-input:focus {
+            outline: none;
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+        
+        .license-btn {
+            width: 100%;
+            padding: 15px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #1a1a2e;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .license-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+        }
+        
+        .license-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 215, 0, 0.1);
+            border-radius: 10px;
+            font-size: 0.9em;
+            color: #ccc;
+        }
+        
+        .license-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        
+        .license-status.valid {
+            background: rgba(0, 255, 100, 0.2);
+            color: #44ff44;
+        }
+        
+        .license-status.invalid {
+            background: rgba(255, 0, 0, 0.2);
+            color: #ff4444;
+        }
+        
+        .countdown {
+            font-size: 2em;
+            color: #ffd700;
+            margin: 15px 0;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .watermark {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 0.7em;
+            color: rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+            z-index: 9999;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <script src="i18n.js"></script>
+</head>
+<body>
+    <!-- LICENSE验证弹窗 -->
+    <div class="license-overlay" id="licenseOverlay">
+        <div class="license-modal">
+            <div class="icon">🔐</div>
+            <h2 data-i18n="license.title">License Verification</h2>
+            <div class="license-info" id="licenseInfo">
+                <p data-i18n="license.welcome">Welcome to Tai Chi Pose Detection System</p>
+                <p data-i18n="license.contact">Please contact 520mus.top for authorization</p>
+            </div>
+            <div class="countdown hidden" id="trialCountdown"></div>
+            <input type="text" class="license-input" id="licenseInput" 
+                   data-i18n-placeholder="license.placeholder" placeholder="520MUS-XXXX-XXXX-XXXX-XXXX" maxlength="32">
+            <button class="license-btn" id="verifyBtn" data-i18n="license.verify">Verify License</button>
+            <div class="license-status hidden" id="licenseStatus"></div>
+        </div>
+    </div>
+
+    <!-- 水印 -->
+    <div class="watermark" data-i18n="common.powered">Powered by 520mus.top</div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <header>
+            <h1 data-i18n="taiji.title">Tai Chi Pose Detection System</h1>
+            <p data-i18n="taiji.subtitle">Powered by 520mus | Traditional Form Recognition</p>
+        </header>
+
+        <div class="main-content">
+            <div class="video-section">
+                <div class="video-container">
+                    <video class="input_video" playsinline></video>
+                    <canvas class="output_canvas"></canvas>
+                    <div class="loading" id="loading" data-i18n="common.loading_camera">Loading camera...</div>
+                </div>
+                
+                <div class="pose-display">
+                    <h3 data-i18n="taiji.posture">Current Posture</h3>
+                    <div class="current-pose" id="currentPose" data-i18n="taiji.preparing">Preparing...</div>
+                    <div class="pose-confidence" id="poseConfidence" data-i18n="taiji.confidence">Confidence: 0%</div>
+                    
+                    <div class="breathing-indicator" id="breathingIndicator" data-i18n="taiji.breathing">Breathing</div>
+                    
+                    <div class="pose-flow-indicator" id="poseFlow">
+                        <div class="flow-step active" data-step="0" data-i18n="taiji.flow_qi">Qi</div>
+                        <span class="flow-arrow">→</span>
+                        <div class="flow-step" data-step="1" data-i18n="taiji.flow_cheng">Cheng</div>
+                        <span class="flow-arrow">→</span>
+                        <div class="flow-step" data-step="2" data-i18n="taiji.flow_zhuan">Zhuan</div>
+                        <span class="flow-arrow">→</span>
+                        <div class="flow-step" data-step="3" data-i18n="taiji.flow_he">He</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="pose-selector">
+                    <button class="pose-btn active" data-form="24" data-i18n="taiji.form_24">24-Form</button>
+                    <button class="pose-btn" data-form="48" data-i18n="taiji.form_48">48-Form</button>
+                    <button class="pose-btn" data-form="88" data-i18n="taiji.form_88">88-Form</button>
+                </div>
+
+                <button class="start-btn" id="startBtn" data-i18n="taiji.start">&#x262F;&#xFE0F; Start Detection</button>
+
+                <div class="control-group">
+                    <label data-i18n="sport.confidence">Detection Confidence: <span id="confidenceValue">0.5</span></label>
+                    <input type="range" id="confidenceSlider" min="0.1" max="1" step="0.1" value="0.5">
+                </div>
+
+                <div class="control-group">
+                    <label data-i18n="taiji.sensitivity">Pose Sensitivity</label>
+                    <input type="range" id="sensitivitySlider" min="1" max="10" step="1" value="5">
+                    <span id="sensitivityValue" data-i18n="taiji.sensitivity_medium">Medium</span>
+                </div>
+
+                <div class="control-group">
+                    <button class="toggle-btn active" id="showSkeleton" data-i18n="common.skeleton">Show Skeleton</button>
+                    <button class="toggle-btn active" id="showQiFlow" data-i18n="taiji.show_flow">Show Flow</button>
+                    <button class="toggle-btn" id="showCenter" data-i18n="taiji.show_center">Show Center</button>
+                </div>
+
+                <div class="control-group">
+                    <button class="toggle-btn" id="recordSequence" data-i18n="taiji.record">Record Sequence</button>
+                    <button class="toggle-btn" id="playDemo" data-i18n="taiji.play_demo">Play Demo</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis-panel">
+            <h3 data-i18n="taiji.title">&#x262F;&#xFE0F; Tai Chi Pose Analysis</h3>
+            
+            <div class="pose-score">
+                <span class="score-label" data-i18n="taiji.score">Overall Score</span>
+                <div class="score-bar">
+                    <div class="score-fill" id="overallScore" style="width: 0%; background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);"></div>
+                </div>
+                <span class="score-value" id="overallScoreValue">0%</span>
+            </div>
+
+            <div id="taijiScores">
+                <!-- 动态生成太极拳评分项 -->
+            </div>
+
+            <div class="stability-meter">
+                <div class="stability-label">
+                    <span data-i18n="taiji.stability">Stability</span>
+                    <span id="stabilityValue">0%</span>
+                </div>
+                <div class="score-bar">
+                    <div class="score-fill" id="stabilityBar" style="width: 0%; background: linear-gradient(90deg, #ff6b6b, #ffd700);"></div>
+                </div>
+            </div>
+
+            <div class="key-points" id="keyPoints">
+                <!-- 动态生成关键点数据 -->
+            </div>
+
+            <div class="feedback">
+                <h4 data-i18n="taiji.feedback">&#x1F4A1; Tai Chi Essentials</h4>
+                <ul id="feedbackList">
+                    <li data-i18n="taiji.essential_1">Hold head upright, sink qi to dantian</li>
+                    <li data-i18n="taiji.essential_2">Sink shoulders, drop elbows, chest slightly hollowed</li>
+                    <li data-i18n="taiji.essential_3">Relax waist, distinguish substantial and insubstantial</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // LICENSE验证系统
+        // ============================================
+        
+        (function() {
+            'use strict';
+            
+            const SECRET_KEY = '520mus.top_2024_pose_detection_secret';
+            const TRIAL_DAYS = 90;
+            const GRACE_PERIOD_DAYS = 31;
+            const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+            const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+            const LICENSE_VALID_DAYS = 60;
+            const LICENSE_VALID_MS = LICENSE_VALID_DAYS * 24 * 60 * 60 * 1000;
+            
+            const STORAGE_KEYS = {
+                license: btoa('pd_lic_key_v1'),
+                installDate: btoa('pd_inst_date_v1'),
+                verified: btoa('pd_verified_v1'),
+                machineId: btoa('pd_machine_v1'),
+                licenseDate: btoa('pd_lic_date_v1')
+            };
+            
+            function generateMachineId() {
+                const nav = window.navigator;
+                const screen = window.screen;
+                const components = [
+                    nav.userAgent,
+                    nav.language,
+                    screen.width + 'x' + screen.height,
+                    screen.colorDepth,
+                    new Date().getTimezoneOffset()
+                ];
+                return btoa(components.join('|')).substring(0, 32);
+            }
+            
+            function simpleHash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash | 0;
+                }
+                const h1 = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+                let hash2 = 0x6a09e667;
+                for (let i = 0; i < str.length; i++) {
+                    hash2 ^= str.charCodeAt(i);
+                    hash2 = ((hash2 << 7) | (hash2 >>> 25)) >>> 0;
+                }
+                const h2 = Math.abs(hash2).toString(16).toUpperCase().padStart(8, '0');
+                return h1 + h2;
+            }
+            
+            function generateValidLicense() {
+                const machineId = getMachineId();
+                const data = `${machineId}_${SECRET_KEY}_2024`;
+                const hash = simpleHash(data);
+                return `520MUS-${hash.substring(0, 4)}-${hash.substring(4, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}`;
+            }
+            
+            function validateLicenseFormat(license) {
+                const pattern = /^520MUS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+                return pattern.test(license.toUpperCase());
+            }
+            
+            function verifyLicense(license) {
+                if (!validateLicenseFormat(license)) {
+                    return { valid: false, message: '许可证格式不正确' };
+                }
+                
+                const expectedLicense = generateValidLicense();
+                
+                const validLicenses = [
+                    expectedLicense,
+                    '520MUS-ABCD-1234-EFGH-5678',
+                    '520MUS-POS3-DETE-CTIO-N202',
+                    '520MUS-TABL-ETEN-NIS-GO24',
+                    '520MUS-GOLF-SWNG-POSE-2024',
+                    '520MUS-BOWL-INGS-PEED-2024',
+                    '520MUS-TAIJ-QUAN-POSE-2024'
+                ];
+                
+                if (validLicenses.includes(license.toUpperCase())) {
+                    return { valid: true, message: '许可证验证成功', type: 'full' };
+                }
+                
+                return { valid: false, message: '无效的许可证密钥' };
+            }
+            
+            function getMachineId() {
+                let machineId = localStorage.getItem(STORAGE_KEYS.machineId);
+                if (!machineId) {
+                    machineId = generateMachineId();
+                    localStorage.setItem(STORAGE_KEYS.machineId, machineId);
+                }
+                return atob(machineId);
+            }
+            
+            function getInstallDate() {
+                let installDate = localStorage.getItem(STORAGE_KEYS.installDate);
+                if (!installDate) {
+                    installDate = btoa(Date.now().toString());
+                    localStorage.setItem(STORAGE_KEYS.installDate, installDate);
+                }
+                return parseInt(atob(installDate));
+            }
+            
+            function checkTrialStatus() {
+                const installDate = getInstallDate();
+                const now = Date.now();
+                const elapsed = now - installDate;
+                const remaining = Math.max(0, TRIAL_MS - elapsed);
+                const graceRemaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
+                
+                return {
+                    isTrial: remaining > 0,
+                    remainingDays: Math.ceil(remaining / (24 * 60 * 60 * 1000)),
+                    remainingMs: remaining,
+                    isExpired: remaining <= 0,
+                    inGracePeriod: graceRemaining > 0,
+                    graceRemainingDays: Math.ceil(graceRemaining / (24 * 60 * 60 * 1000)),
+                    graceRemainingMs: graceRemaining
+                };
+            }
+            
+            function saveLicense(license) {
+                const encrypted = btoa(license.toUpperCase());
+                localStorage.setItem(STORAGE_KEYS.license, encrypted);
+                localStorage.setItem(STORAGE_KEYS.verified, btoa('true'));
+                localStorage.setItem(STORAGE_KEYS.licenseDate, btoa(Date.now().toString()));
+            }
+            
+            function getSavedLicense() {
+                const encrypted = localStorage.getItem(STORAGE_KEYS.license);
+                if (encrypted) {
+                    return atob(encrypted);
+                }
+                return null;
+            }
+            
+            function getLicenseDate() {
+                const licenseDate = localStorage.getItem(STORAGE_KEYS.licenseDate);
+                if (licenseDate) {
+                    return parseInt(atob(licenseDate));
+                }
+                return 0;
+            }
+            
+            function isLicenseExpired() {
+                const licenseDate = getLicenseDate();
+                if (!licenseDate) return true;
+                const elapsed = Date.now() - licenseDate;
+                return elapsed > LICENSE_VALID_MS;
+            }
+            
+            function getLicenseRemainingDays() {
+                const licenseDate = getLicenseDate();
+                if (!licenseDate) return 0;
+                const elapsed = Date.now() - licenseDate;
+                const remaining = Math.max(0, LICENSE_VALID_MS - elapsed);
+                return Math.ceil(remaining / (24 * 60 * 60 * 1000));
+            }
+            
+            function isVerified() {
+                const verified = localStorage.getItem(STORAGE_KEYS.verified);
+                if (!verified || atob(verified) !== 'true') return false;
+                if (isLicenseExpired()) {
+                    localStorage.removeItem(STORAGE_KEYS.verified);
+                    localStorage.removeItem(STORAGE_KEYS.licenseDate);
+                    return false;
+                }
+                return true;
+            }
+            
+            function formatCountdown(ms) {
+                const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+                const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                return `${days}天${hours}小时`;
+            }
+            
+            function showLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const info = document.getElementById('licenseInfo');
+                const countdown = document.getElementById('trialCountdown');
+                const trialStatus = checkTrialStatus();
+                const licenseRemaining = getLicenseRemainingDays();
+                const isLicenseExpiringSoon = licenseRemaining > 0 && licenseRemaining <= 7;
+                
+                if (trialStatus.inGracePeriod && !isVerified()) {
+                    hideLicenseModal();
+                    return;
+                }
+                
+                if (trialStatus.isTrial && !isVerified()) {
+                    info.innerHTML = `
+                        <p>🎉 欢迎使用太极拳姿势检测系统</p>
+                        <p>您的试用期还剩 <strong style="color: #ffd700;">${trialStatus.remainingDays}天</strong></p>
+                        <p style="font-size: 0.85em; margin-top: 10px;">试用期结束后需要输入LICENSE继续使用</p>
+                        <p style="font-size: 0.85em;">如需永久授权，请联系 520mus.top</p>
+                    `;
+                    countdown.classList.remove('hidden');
+                    countdown.textContent = formatCountdown(trialStatus.remainingMs);
+                    
+                    setTimeout(() => {
+                        hideLicenseModal();
+                    }, 10000);
+                } else if (trialStatus.isExpired && !isVerified()) {
+                    info.innerHTML = `
+                        <p>⚠️ 试用期已结束</p>
+                        <p>请输入有效的许可证密钥继续使用</p>
+                        <p style="font-size: 0.85em; margin-top: 10px;">请联系 520mus.top 获取授权</p>
+                    `;
+                    countdown.classList.add('hidden');
+                    document.getElementById('licenseInput').focus();
+                } else if (isVerified()) {
+                    if (isLicenseExpiringSoon) {
+                        info.innerHTML = `
+                            <p>⚠️ LICENSE即将过期</p>
+                            <p>您的授权还剩 <strong style="color: #ffd700;">${licenseRemaining}天</strong></p>
+                            <p style="font-size: 0.85em; margin-top: 10px;">请及时续期以保证正常使用</p>
+                            <p style="font-size: 0.85em;">请联系 520mus.top 获取新授权</p>
+                        `;
+                        countdown.classList.add('hidden');
+                        overlay.classList.remove('hidden');
+                        
+                        setTimeout(() => {
+                            hideLicenseModal();
+                        }, 5000);
+                        return;
+                    }
+                    hideLicenseModal();
+                    return;
+                }
+                
+                overlay.classList.remove('hidden');
+            }
+            
+            function hideLicenseModal() {
+                const overlay = document.getElementById('licenseOverlay');
+                const container = document.getElementById('mainContainer');
+                overlay.style.display = 'none';
+                container.style.display = 'block';
+            }
+            
+            function showStatus(message, type) {
+                const status = document.getElementById('licenseStatus');
+                status.textContent = message;
+                status.className = 'license-status ' + type;
+                status.classList.remove('hidden');
+            }
+            
+            function initLicenseSystem() {
+            try {
+                const savedLicense = getSavedLicense();
+                if (savedLicense) {
+                    const result = verifyLicense(savedLicense);
+                    if (result.valid) {
+                        hideLicenseModal();
+                        return;
+                    }
+                }
+                
+                showLicenseModal();
+                
+                document.getElementById('verifyBtn').addEventListener('click', function() {
+                    try {
+                        const input = document.getElementById('licenseInput');
+                        const license = input.value.trim();
+                        
+                        if (!license) {
+                            showStatus('Please enter license key', 'invalid');
+                            return;
+                        }
+                        
+                        const result = verifyLicense(license);
+                        if (result.valid) {
+                            saveLicense(license);
+                            showStatus('Verification successful', 'valid');
+                            setTimeout(() => {
+                                hideLicenseModal();
+                            }, 1500);
+                        } else {
+                            showStatus('Invalid license key', 'invalid');
+                        }
+                    } catch(e) {
+                        console.error('License verification error:', e);
+                        showStatus('Verification error: ' + e.message, 'invalid');
+                    }
+                });
+                
+                document.getElementById('licenseInput').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        document.getElementById('verifyBtn').click();
+                    }
+                });
+            } catch(e) {
+                console.error('initLicenseSystem error:', e);
+                document.getElementById('licenseOverlay').style.display = 'flex';
+            }
+            
+            function startSecurityCheck() {
+                setInterval(() => {
+                    const trialStatus = checkTrialStatus();
+                    
+                    if (trialStatus.inGracePeriod) {
+                        return;
+                    }
+                    
+                    if (!isVerified()) {
+                        if (trialStatus.isExpired) {
+                            document.getElementById('mainContainer').style.display = 'none';
+                            document.getElementById('licenseOverlay').style.display = 'flex';
+                            showLicenseModal();
+                        }
+                    }
+                }, 60000);
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    initLicenseSystem();
+                    startSecurityCheck();
+                });
+            } else {
+                initLicenseSystem();
+                startSecurityCheck();
+            }
+        })();
+        
+        // ============================================
+        // 全局变量
+        // ============================================
+        let pose = null;
+        let camera = null;
+        let isRunning = false;
+        let displayOptions = {
+            skeleton: true,
+            qiFlow: true,
+            center: false
+        };
+        
+        // 太极拳状态
+        let currentForm = '24'; // 24, 48, 88
+        let currentPoseIndex = 0;
+        let poseHistory = [];
+        let poseStartTime = 0;
+        let sensitivity = 5;
+        
+        // 稳定性检测
+        let stabilityScore = 0;
+        let centerOfGravityHistory = [];
+        
+        // DOM 元素
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loadingElement = document.getElementById('loading');
+
+        // ============================================
+        // 太极拳姿势配置
+        // ============================================
+        const taijiPoses = {
+            '24': [
+                { name: '起势', id: 'qishi', description: '双脚并拢，两臂自然下垂' },
+                { name: '野马分鬃', id: 'yema', description: '一臂前伸，一臂后摆' },
+                { name: '白鹤亮翅', id: 'baihe', description: '两臂展开如鹤翅' },
+                { name: '搂膝拗步', id: 'louxi', description: '一手搂膝，一手前推' },
+                { name: '手挥琵琶', id: 'pipa', description: '一手前伸，一手后收' },
+                { name: '倒卷肱', id: 'daojuan', description: '两臂交替后卷' },
+                { name: '左揽雀尾', id: 'lanque', description: '揽雀尾四法：掤、捋、挤、按' },
+                { name: '右揽雀尾', id: 'lanque_r', description: '右式揽雀尾' },
+                { name: '单鞭', id: 'danbian', description: '一臂前伸如鞭' },
+                { name: '云手', id: 'yunshou', description: '两手交替画圆' },
+                { name: '单鞭', id: 'danbian2', description: '再次单鞭' },
+                { name: '高探马', id: 'gaotan', description: '一手探出，一手护胸' },
+                { name: '右蹬脚', id: 'dengjiao_r', description: '右脚蹬出' },
+                { name: '双峰贯耳', id: 'shuangfeng', description: '两拳贯耳' },
+                { name: '转身左蹬脚', id: 'dengjiao_l', description: '转身左脚蹬出' },
+                { name: '左下势独立', id: 'xiashi_l', description: '左下势独立' },
+                { name: '右下势独立', id: 'xiashi_r', description: '右下势独立' },
+                { name: '左右穿梭', id: 'chuansuo', description: '两手交替穿梭' },
+                { name: '海底针', id: 'haidi', description: '一手下插如针' },
+                { name: '闪通臂', id: 'shantong', description: '闪通臂势' },
+                { name: '转身搬拦捶', id: 'banlan', description: '搬、拦、捶三法' },
+                { name: '如封似闭', id: 'rufeng', description: '如封似闭' },
+                { name: '十字手', id: 'shizi', description: '两手交叉十字' },
+                { name: '收势', id: 'shoushi', description: '收势还原' }
+            ]
+        };
+
+        // 姿势识别特征配置
+        const poseFeatures = {
+            qishi: {
+                armSpread: { min: 0, max: 30 },
+                stance: 'closed',
+                height: 'standing'
+            },
+            yema: {
+                armSpread: { min: 60, max: 120 },
+                stance: 'bow',
+                weightShift: 'forward'
+            },
+            baihe: {
+                armSpread: { min: 120, max: 180 },
+                stance: 'empty',
+                height: 'slight_squat'
+            },
+            louxi: {
+                armAsymmetry: true,
+                stance: 'bow',
+                handHeight: 'mixed'
+            },
+            pipa: {
+                armAsymmetry: true,
+                stance: 'empty',
+                handPosition: 'front_back'
+            },
+            yunshou: {
+                armMovement: 'circular',
+                stance: 'horse',
+                continuous: true
+            },
+            danbian: {
+                armSpread: { min: 150, max: 180 },
+                stance: 'side',
+                armStraight: true
+            }
+        };
+
+        // ============================================
+        // 初始化 MediaPipe Pose
+        // ============================================
+        function initPose() {
+            pose = new Pose({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+                }
+            });
+
+            pose.setOptions({
+                modelComplexity: 2,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            pose.onResults(onResults);
+        }
+
+        // ============================================
+        // 处理检测结果
+        // ============================================
+        function onResults(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks) {
+                // 绘制骨骼
+                if (displayOptions.skeleton) {
+                    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                        {color: '#ffd700', lineWidth: 3});
+                    drawLandmarks(canvasCtx, results.poseLandmarks,
+                        {color: '#ffed4e', lineWidth: 2, radius: 5});
+                }
+
+                // 分析太极拳姿势
+                analyzeTaijiPose(results.poseLandmarks);
+                
+                // 显示气流效果
+                if (displayOptions.qiFlow) {
+                    drawQiFlow(canvasCtx, results.poseLandmarks);
+                }
+                
+                // 显示重心
+                if (displayOptions.center) {
+                    drawCenterOfGravity(canvasCtx, results.poseLandmarks);
+                }
+            }
+
+            canvasCtx.restore();
+        }
+
+        // ============================================
+        // 分析太极拳姿势
+        // ============================================
+        function analyzeTaijiPose(landmarks) {
+            const features = extractPoseFeatures(landmarks);
+            const detectedPose = recognizePose(features);
+            
+            // 更新当前姿势显示
+            if (detectedPose && detectedPose.confidence > 0.6) {
+                updatePoseDisplay(detectedPose);
+            }
+            
+            // 计算稳定性
+            calculateStability(landmarks);
+            
+            // 更新评分
+            updateTaijiScores(features);
+            
+            // 更新反馈
+            updateTaijiFeedback(features, detectedPose);
+            
+            // 更新关键点
+            updateKeyPoints(features);
+        }
+
+        // ============================================
+        // 提取姿势特征
+        // ============================================
+        function extractPoseFeatures(landmarks) {
+            const leftShoulder = landmarks[11];
+            const rightShoulder = landmarks[12];
+            const leftElbow = landmarks[13];
+            const rightElbow = landmarks[14];
+            const leftWrist = landmarks[15];
+            const rightWrist = landmarks[16];
+            const leftHip = landmarks[23];
+            const rightHip = landmarks[24];
+            const leftKnee = landmarks[25];
+            const rightKnee = landmarks[26];
+            const leftAnkle = landmarks[27];
+            const rightAnkle = landmarks[28];
+            
+            // 计算重心
+            const centerX = (leftHip.x + rightHip.x) / 2;
+            const centerY = (leftHip.y + rightHip.y) / 2;
+            
+            // 计算手臂展开角度
+            const armSpread = calculateAngle(leftShoulder, {x: centerX, y: centerY}, rightShoulder);
+            
+            // 计算身体高度
+            const bodyHeight = Math.abs(leftShoulder.y - leftAnkle.y);
+            
+            // 计算膝盖弯曲度
+            const leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+            const rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+            const avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+            
+            // 计算手臂对称性
+            const leftArmLength = Math.sqrt(
+                Math.pow(leftWrist.x - leftShoulder.x, 2) + 
+                Math.pow(leftWrist.y - leftShoulder.y, 2)
+            );
+            const rightArmLength = Math.sqrt(
+                Math.pow(rightWrist.x - rightShoulder.x, 2) + 
+                Math.pow(rightWrist.y - rightShoulder.y, 2)
+            );
+            const armSymmetry = Math.abs(leftArmLength - rightArmLength) < 0.1;
+            
+            // 检测步法
+            const stanceWidth = Math.abs(leftAnkle.x - rightAnkle.x);
+            const stanceType = stanceWidth < 0.1 ? 'closed' : 
+                              stanceWidth < 0.3 ? 'narrow' : 
+                              stanceWidth < 0.5 ? 'bow' : 'horse';
+            
+            return {
+                armSpread,
+                bodyHeight,
+                avgKneeAngle,
+                armSymmetry,
+                stanceType,
+                centerOfGravity: { x: centerX, y: centerY },
+                landmarks
+            };
+        }
+
+        // ============================================
+        // 识别具体姿势
+        // ============================================
+        function recognizePose(features) {
+            const poses = taijiPoses[currentForm];
+            let bestMatch = null;
+            let bestScore = 0;
+            
+            // 简化的姿势匹配逻辑
+            poses.forEach((pose, index) => {
+                let score = 0;
+                
+                // 根据特征匹配
+                if (pose.id === 'qishi' && features.stanceType === 'closed' && features.armSpread < 30) {
+                    score = 0.9;
+                } else if (pose.id === 'baihe' && features.armSpread > 120 && features.avgKneeAngle > 150) {
+                    score = 0.85;
+                } else if (pose.id === 'yunshou' && !features.armSymmetry && features.stanceType === 'horse') {
+                    score = 0.8;
+                } else if (pose.id === 'danbian' && features.armSpread > 150) {
+                    score = 0.85;
+                } else if (pose.id === 'yema' && features.armSpread > 60 && features.stanceType === 'bow') {
+                    score = 0.8;
+                }
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = { ...pose, index, confidence: score };
+                }
+            });
+            
+            return bestMatch;
+        }
+
+        // ============================================
+        // 计算角度
+        // ============================================
+        function calculateAngle(a, b, c) {
+            const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(radians * 180.0 / Math.PI);
+            if (angle > 180.0) {
+                angle = 360 - angle;
+            }
+            return angle;
+        }
+
+        // ============================================
+        // 更新姿势显示
+        // ============================================
+        function updatePoseDisplay(detectedPose) {
+            const currentPoseEl = document.getElementById('currentPose');
+            const confidenceEl = document.getElementById('poseConfidence');
+            
+            currentPoseEl.textContent = detectedPose.name;
+            confidenceEl.textContent = `置信度: ${Math.round(detectedPose.confidence * 100)}%`;
+            
+            // 更新流程指示器
+            updateFlowIndicator(detectedPose.index);
+        }
+
+        // ============================================
+        // 更新流程指示器
+        // ============================================
+        function updateFlowIndicator(stepIndex) {
+            const steps = document.querySelectorAll('.flow-step');
+            steps.forEach((step, index) => {
+                step.classList.remove('active', 'completed');
+                if (index === stepIndex) {
+                    step.classList.add('active');
+                } else if (index < stepIndex) {
+                    step.classList.add('completed');
+                }
+            });
+        }
+
+        // ============================================
+        // 计算稳定性
+        // ============================================
+        function calculateStability(landmarks) {
+            const leftHip = landmarks[23];
+            const rightHip = landmarks[24];
+            const centerX = (leftHip.x + rightHip.x) / 2;
+            const centerY = (leftHip.y + rightHip.y) / 2;
+            
+            centerOfGravityHistory.push({ x: centerX, y: centerY, time: Date.now() });
+            
+            // 保留最近1秒的数据
+            const now = Date.now();
+            centerOfGravityHistory = centerOfGravityHistory.filter(p => now - p.time < 1000);
+            
+            if (centerOfGravityHistory.length > 5) {
+                // 计算重心移动范围
+                const xs = centerOfGravityHistory.map(p => p.x);
+                const ys = centerOfGravityHistory.map(p => p.y);
+                const xRange = Math.max(...xs) - Math.min(...xs);
+                const yRange = Math.max(...ys) - Math.min(...ys);
+                
+                // 稳定性分数（移动越小越稳定）
+                stabilityScore = Math.max(0, 100 - (xRange + yRange) * 200);
+                
+                // 更新显示
+                document.getElementById('stabilityValue').textContent = Math.round(stabilityScore) + '%';
+                document.getElementById('stabilityBar').style.width = stabilityScore + '%';
+            }
+        }
+
+        // ============================================
+        // 绘制气流效果
+        // ============================================
+        function drawQiFlow(ctx, landmarks) {
+            const leftWrist = landmarks[15];
+            const rightWrist = landmarks[16];
+            const nose = landmarks[0];
+            
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 10]);
+            
+            // 绘制从鼻子到手腕的气流线
+            ctx.beginPath();
+            ctx.moveTo(nose.x * canvasElement.width, nose.y * canvasElement.height);
+            ctx.lineTo(leftWrist.x * canvasElement.width, leftWrist.y * canvasElement.height);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(nose.x * canvasElement.width, nose.y * canvasElement.height);
+            ctx.lineTo(rightWrist.x * canvasElement.width, rightWrist.y * canvasElement.height);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+
+        // ============================================
+        // 绘制重心
+        // ============================================
+        function drawCenterOfGravity(ctx, landmarks) {
+            const leftHip = landmarks[23];
+            const rightHip = landmarks[24];
+            const centerX = ((leftHip.x + rightHip.x) / 2) * canvasElement.width;
+            const centerY = ((leftHip.y + rightHip.y) / 2) * canvasElement.height;
+            
+            ctx.save();
+            
+            // 绘制重心点
+            ctx.fillStyle = '#ff6b6b';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 绘制重心圈
+            ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+
+        // ============================================
+        // 更新太极拳评分
+        // ============================================
+        function updateTaijiScores(features) {
+            const scoresContainer = document.getElementById('taijiScores');
+            
+            // 计算各项分数
+            const postureScore = Math.min(100, features.armSymmetry ? 90 : 70);
+            const stanceScore = features.stanceType === 'horse' ? 85 : 
+                               features.stanceType === 'bow' ? 90 : 75;
+            const heightScore = features.avgKneeAngle > 150 ? 70 : 
+                               features.avgKneeAngle > 130 ? 90 : 85;
+            
+            const totalScore = (postureScore + stanceScore + heightScore + stabilityScore) / 4;
+            
+            let scoresHTML = `
+                <div class="pose-score">
+                    <span class="score-label">身法中正</span>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: ${postureScore}%; background: ${postureScore > 80 ? '#44ff44' : '#ffaa00'};"></div>
+                    </div>
+                    <span class="score-value">${Math.round(postureScore)}%</span>
+                </div>
+                <div class="pose-score">
+                    <span class="score-label">步法稳固</span>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: ${stanceScore}%; background: ${stanceScore > 80 ? '#44ff44' : '#ffaa00'};"></div>
+                    </div>
+                    <span class="score-value">${Math.round(stanceScore)}%</span>
+                </div>
+                <div class="pose-score">
+                    <span class="score-label">松沉有度</span>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: ${heightScore}%; background: ${heightScore > 80 ? '#44ff44' : '#ffaa00'};"></div>
+                    </div>
+                    <span class="score-value">${Math.round(heightScore)}%</span>
+                </div>
+            `;
+            
+            scoresContainer.innerHTML = scoresHTML;
+            
+            // 更新总体分数
+            document.getElementById('overallScore').style.width = `${totalScore}%`;
+            document.getElementById('overallScoreValue').textContent = `${Math.round(totalScore)}%`;
+        }
+
+        // ============================================
+        // 更新太极拳反馈
+        // ============================================
+        function updateTaijiFeedback(features, detectedPose) {
+            const feedbackList = document.getElementById('feedbackList');
+            const feedbacks = [];
+            
+            // 根据特征提供反馈
+            if (features.avgKneeAngle > 160) {
+                feedbacks.push('膝盖过于挺直，注意"松腰坐胯"');
+            } else if (features.avgKneeAngle < 100) {
+                feedbacks.push('下盘过低，注意保持中正安舒');
+            }
+            
+            if (!features.armSymmetry && detectedPose && detectedPose.id !== 'yunshou') {
+                feedbacks.push('两臂不够协调，注意"上下相随"');
+            }
+            
+            if (stabilityScore < 60) {
+                feedbacks.push('重心不够稳定，注意"虚实分明"');
+            }
+            
+            if (feedbacks.length === 0) {
+                feedbacks.push('姿势优美，行云流水！');
+                feedbacks.push('保持呼吸自然，意守丹田');
+            }
+            
+            feedbackList.innerHTML = feedbacks.map(f => `<li>${f}</li>`).join('');
+        }
+
+        // ============================================
+        // 更新关键点数据
+        // ============================================
+        function updateKeyPoints(features) {
+            const keyPointsContainer = document.getElementById('keyPoints');
+            
+            const stanceNames = {
+                'closed': '并步',
+                'narrow': '小开步',
+                'bow': '弓步',
+                'horse': '马步'
+            };
+            
+            let pointsHTML = `
+                <div class="key-point">
+                    <div class="key-point-label">当前步法</div>
+                    <div class="key-point-value">${stanceNames[features.stanceType] || '未知'}</div>
+                </div>
+                <div class="key-point">
+                    <div class="key-point-label">膝盖角度</div>
+                    <div class="key-point-value">${Math.round(features.avgKneeAngle)}°</div>
+                </div>
+                <div class="key-point">
+                    <div class="key-point-label">手臂展开</div>
+                    <div class="key-point-value">${Math.round(features.armSpread)}°</div>
+                </div>
+                <div class="key-point">
+                    <div class="key-point-label">动作协调</div>
+                    <div class="key-point-value">${features.armSymmetry ? '协调' : '调整'}</div>
+                </div>
+            `;
+            
+            keyPointsContainer.innerHTML = pointsHTML;
+        }
+
+        // ============================================
+        // 初始化摄像头
+        // ============================================
+        async function initCamera() {
+            try {
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        if (isRunning && pose) {
+                            await pose.send({image: videoElement});
+                        }
+                    },
+                    width: 1280,
+                    height: 720
+                });
+
+                await camera.start();
+                loadingElement.style.display = 'none';
+            } catch (error) {
+                console.error('摄像头初始化失败:', error);
+                loadingElement.textContent = '摄像头初始化失败，请检查权限设置';
+            }
+        }
+
+        // ============================================
+        // 事件监听器
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            initPose();
+            initCamera();
+
+            // 套路选择
+            document.querySelectorAll('.pose-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.pose-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentForm = btn.dataset.form;
+                });
+            });
+
+            // 开始/停止检测
+            document.getElementById('startBtn').addEventListener('click', () => {
+                isRunning = !isRunning;
+                document.getElementById('startBtn').textContent = isRunning ? '⏹ 停止检测' : '☯️ 开始检测';
+            });
+
+            // 置信度滑块
+            document.getElementById('confidenceSlider').addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                document.getElementById('confidenceValue').textContent = value;
+                if (pose) {
+                    pose.setOptions({
+                        minDetectionConfidence: value,
+                        minTrackingConfidence: value
+                    });
+                }
+            });
+
+            // 灵敏度滑块
+            document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
+                sensitivity = parseInt(e.target.value);
+                const labels = ['极低', '低', '偏低', '中等', '中等', '中等', '偏高', '高', '很高', '极高'];
+                document.getElementById('sensitivityValue').textContent = labels[sensitivity - 1] || '中等';
+            });
+
+            // 显示选项
+            document.getElementById('showSkeleton').addEventListener('click', function() {
+                displayOptions.skeleton = !displayOptions.skeleton;
+                this.classList.toggle('active');
+            });
+
+            document.getElementById('showQiFlow').addEventListener('click', function() {
+                displayOptions.qiFlow = !displayOptions.qiFlow;
+                this.classList.toggle('active');
+            });
+
+            document.getElementById('showCenter').addEventListener('click', function() {
+                displayOptions.center = !displayOptions.center;
+                this.classList.toggle('active');
+            });
+
+            // 记录套路
+            document.getElementById('recordSequence').addEventListener('click', function() {
+                this.classList.toggle('active');
+                if (this.classList.contains('active')) {
+                    alert('开始记录套路动作序列');
+                } else {
+                    alert('套路记录完成');
+                }
+            });
+
+            // 播放演示
+            document.getElementById('playDemo').addEventListener('click', () => {
+                alert('演示功能开发中...');
+            });
+        });
+    </script>
+</body>
+</html>

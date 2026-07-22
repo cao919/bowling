@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>姿态编辑训练系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #0a0a1a;
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        header { text-align: center; padding: 20px 0; }
+        header h1 {
+            font-size: 2em;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        header .subtitle { color: #888; margin-top: 8px; }
+
+        .main-panel {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: default;
+        }
+        .video-wrapper.editing { cursor: crosshair; }
+        .video-wrapper video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .video-wrapper canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 2;
+        }
+        .video-wrapper .overlay-msg {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            background: rgba(0,0,0,0.8);
+            border: 2px solid #ff006e;
+            border-radius: 12px;
+            padding: 16px 28px;
+            font-size: 1.1em;
+            color: #ff006e;
+            pointer-events: none;
+            display: none;
+        }
+        .video-wrapper.paused .overlay-msg { display: block; }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        .btn {
+            padding: 12px 28px;
+            border: none;
+            border-radius: 25px;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-start { background: linear-gradient(45deg, #00cc66, #00d4ff); color: #0a0a1a; }
+        .btn-start:hover:not(:disabled) { box-shadow: 0 0 20px rgba(0,204,102,0.4); }
+        .btn-pause { background: linear-gradient(45deg, #ffaa00, #ff6600); color: #fff; }
+        .btn-pause:hover:not(:disabled) { box-shadow: 0 0 20px rgba(255,170,0,0.4); }
+        .btn-resume { background: linear-gradient(45deg, #00cc66, #00d4ff); color: #0a0a1a; }
+        .btn-resume:hover:not(:disabled) { box-shadow: 0 0 20px rgba(0,204,102,0.4); }
+        .btn-reset { background: transparent; border: 1px solid #ff4444; color: #ff4444; }
+        .btn-reset:hover:not(:disabled) { background: rgba(255,68,68,0.1); }
+        .btn-stop { background: #ff4444; color: #fff; }
+        .btn-stop:hover:not(:disabled) { box-shadow: 0 0 20px rgba(255,68,68,0.4); }
+
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .tool-btn {
+            padding: 8px 18px;
+            border: 1px solid #2a2a5e;
+            border-radius: 20px;
+            background: transparent;
+            color: #aaa;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tool-btn:hover:not(:disabled) { border-color: #00d4ff; color: #00d4ff; }
+        .tool-btn.active { border-color: #00d4ff; color: #00d4ff; background: rgba(0,212,255,0.1); }
+
+        .info-bar {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 16px;
+            padding: 12px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            font-size: 0.9em;
+        }
+        .info-item { text-align: center; }
+        .info-item .label { color: #888; font-size: 0.8em; }
+        .info-item .value { color: #00d4ff; font-size: 1.1em; font-weight: 600; }
+
+        .toast {
+            position: fixed;
+            top: 20px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            animation: slideDown 0.3s ease;
+        }
+        .toast.info { background: #00d4ff; color: #0a0a1a; }
+        .toast.success { background: #00cc66; color: #fff; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+    </style>
+
+    <script src="i18n.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 data-i18n="editor.title">Pose Editor Training System</h1>
+            <p class="subtitle" data-i18n="editor.subtitle">Pause frame, drag keypoints, auto-stretch bone lines</p>
+        </header>
+
+        <div class="main-panel">
+            <div class="video-wrapper" id="videoWrapper">
+                <video id="cameraVideo" playsinline autoplay></video>
+                <canvas id="poseCanvas"></canvas>
+                <div class="overlay-msg" id="overlayMsg" data-i18n="editor.paused_msg">&#x23F8; Paused - Drag keypoints to adjust pose</div>
+            </div>
+
+            <div class="controls">
+                <button class="btn btn-start" id="btnStart" data-i18n="editor.start_camera">Start Camera</button>
+                <button class="btn btn-pause" id="btnPause" data-i18n="editor.pause" disabled>Pause / Screenshot</button>
+                <button class="btn btn-resume" id="btnResume" data-i18n="editor.resume" disabled>Resume Detection</button>
+                <button class="btn btn-reset" id="btnReset" data-i18n="editor.reset_pose" disabled>Reset Pose</button>
+                <button class="btn btn-stop" id="btnStop" data-i18n="editor.stop_camera" disabled>Stop Camera</button>
+            </div>
+
+            <div class="toolbar">
+                <span style="color: #888; font-size: 0.85em; display: flex; align-items: center;" data-i18n="editor.tools">Tools:</span>
+                <button class="tool-btn active" id="toolMove" data-tool="move" data-i18n="editor.move_points">Move Keypoints</button>
+                <button class="tool-btn" id="toolExport" data-tool="export" data-i18n="editor.export_coords">Export Coordinates</button>
+            </div>
+
+            <div class="info-bar">
+                <div class="info-item">
+                    <div class="label" data-i18n="editor.status">Status</div>
+                    <div class="value" id="infoStatus" data-i18n="editor.not_started">Not Started</div>
+                </div>
+                <div class="info-item">
+                    <div class="label" data-i18n="editor.landmarks">Keypoints</div>
+                    <div class="value" id="infoLandmarks">0</div>
+                </div>
+                <div class="info-item">
+                    <div class="label" data-i18n="editor.drag_point">Drag Point</div>
+                    <div class="value" id="infoDragPoint">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // MediaPipe Pose连接定义
+        // ============================================
+        const POSE_CONNECTIONS = [
+            [0, 1], [1, 2], [2, 3], [3, 7],
+            [0, 4], [4, 5], [5, 6], [6, 8],
+            [9, 10],
+            [11, 12], [11, 13], [13, 15],
+            [12, 14], [14, 16],
+            [11, 23], [12, 24], [23, 24],
+            [23, 25], [25, 27], [24, 26], [26, 28],
+            [27, 29], [29, 31], [28, 30], [30, 32],
+            [15, 17], [15, 19], [15, 21],
+            [16, 18], [16, 20], [16, 22],
+            [17, 19]
+        ];
+
+        // 关键点名称（中文）
+        const LANDMARK_NAMES = [
+            '鼻子', '左眼内角', '左眼', '左眼外角', '右眼内角', '右眼', '右眼外角',
+            '左耳', '右耳', '嘴左', '嘴右',
+            '左肩', '右肩', '左肘', '右肘', '左腕', '右腕',
+            '左小指', '右小指', '左食指', '右食指', '左拇指', '右拇指',
+            '左髋', '右髋', '左膝', '右膝', '左踝', '右踝',
+            '左脚跟', '右脚跟', '左脚尖', '右脚尖'
+        ];
+
+        // ============================================
+        // 全局状态
+        // ============================================
+        let pose = null;
+        let camera = null;
+        let isRunning = false;
+        let isPaused = false;
+        let currentLandmarks = null;       // 当前实时检测到的关键点
+        let frozenLandmarks = null;        // 暂停时冻结的关键点（可编辑）
+        let frozenFrame = null;            // 暂停时的视频帧（ImageData）
+        let dragPointIndex = -1;           // 当前拖拽的关键点索引
+        let currentTool = 'move';
+
+        // DOM元素
+        const videoWrapper = document.getElementById('videoWrapper');
+        const videoEl = document.getElementById('cameraVideo');
+        const canvas = document.getElementById('poseCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlayMsg = document.getElementById('overlayMsg');
+
+        const btnStart = document.getElementById('btnStart');
+        const btnPause = document.getElementById('btnPause');
+        const btnResume = document.getElementById('btnResume');
+        const btnReset = document.getElementById('btnReset');
+        const btnStop = document.getElementById('btnStop');
+
+        const infoStatus = document.getElementById('infoStatus');
+        const infoLandmarks = document.getElementById('infoLandmarks');
+        const infoDragPoint = document.getElementById('infoDragPoint');
+
+        // ============================================
+        // Toast提示
+        // ============================================
+        function showToast(msg, type) {
+            const old = document.querySelector('.toast');
+            if (old) old.remove();
+            const t = document.createElement('div');
+            t.className = 'toast ' + (type || 'info');
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2000);
+        }
+
+        // ============================================
+        // 初始化MediaPipe Pose
+        // ============================================
+        async function initPose() {
+            pose = new Pose({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+            });
+            pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            pose.onResults(onPoseResults);
+        }
+
+        // ============================================
+        // Pose结果回调
+        // ============================================
+        function onPoseResults(results) {
+            if (results.poseLandmarks) {
+                currentLandmarks = results.poseLandmarks;
+                infoLandmarks.textContent = results.poseLandmarks.length;
+
+                if (!isPaused) {
+                    // 正常运行：绘制实时骨骼
+                    drawRealTimeSkeleton(results.poseLandmarks);
+                }
+            }
+        }
+
+        // ============================================
+        // 绘制实时骨骼（摄像头模式）
+        // ============================================
+        function drawRealTimeSkeleton(landmarks) {
+            canvas.width = videoEl.videoWidth || 1280;
+            canvas.height = videoEl.videoHeight || 720;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制连接线
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            POSE_CONNECTIONS.forEach(([a, b]) => {
+                if (landmarks[a] && landmarks[b]) {
+                    ctx.beginPath();
+                    ctx.moveTo(landmarks[a].x * canvas.width, landmarks[a].y * canvas.height);
+                    ctx.lineTo(landmarks[b].x * canvas.width, landmarks[b].y * canvas.height);
+                    ctx.stroke();
+                }
+            });
+
+            // 绘制关键点
+            landmarks.forEach((lm, i) => {
+                const x = lm.x * canvas.width;
+                const y = lm.y * canvas.height;
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ff006e';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            });
+        }
+
+        // ============================================
+        // 绘制冻结骨骼（编辑模式）
+        // ============================================
+        function drawFrozenSkeleton() {
+            if (!frozenLandmarks) return;
+
+            canvas.width = videoEl.videoWidth || 1280;
+            canvas.height = videoEl.videoHeight || 720;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制冻结帧背景
+            if (frozenFrame) {
+                ctx.putImageData(frozenFrame, 0, 0);
+            }
+
+            // 绘制连接线
+            ctx.strokeStyle = '#ffaa00';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            POSE_CONNECTIONS.forEach(([a, b]) => {
+                if (frozenLandmarks[a] && frozenLandmarks[b]) {
+                    ctx.beginPath();
+                    ctx.moveTo(frozenLandmarks[a].x * canvas.width, frozenLandmarks[a].y * canvas.height);
+                    ctx.lineTo(frozenLandmarks[b].x * canvas.width, frozenLandmarks[b].y * canvas.height);
+                    ctx.stroke();
+                }
+            });
+
+            // 绘制关键点（可拖拽的点增大）
+            frozenLandmarks.forEach((lm, i) => {
+                const x = lm.x * canvas.width;
+                const y = lm.y * canvas.height;
+                const isDragging = (i === dragPointIndex);
+
+                // 外圈光晕
+                if (isDragging) {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 14, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'rgba(255, 170, 0, 0.3)';
+                    ctx.fill();
+                }
+
+                // 实心圆
+                ctx.beginPath();
+                ctx.arc(x, y, isDragging ? 8 : 6, 0, 2 * Math.PI);
+                ctx.fillStyle = isDragging ? '#ffaa00' : '#ff6600';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // 显示索引号（关键关节点）
+                const showLabels = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+                if (showLabels.includes(i)) {
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px "Segoe UI"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(i, x, y - 10);
+                }
+            });
+        }
+
+        // ============================================
+        // 初始化摄像头
+        // ============================================
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 1280, height: 720, facingMode: 'user' }
+                });
+                videoEl.srcObject = stream;
+
+                camera = new Camera(videoEl, {
+                    onFrame: async () => {
+                        if (isRunning && pose && !isPaused) {
+                            await pose.send({ image: videoEl });
+                        }
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                await camera.start();
+            } catch (e) {
+                console.error('摄像头初始化失败:', e);
+                showToast('摄像头初始化失败，请检查权限', 'error');
+            }
+        }
+
+        // ============================================
+        // 开始检测
+        // ============================================
+        async function startDetection() {
+            if (!pose) await initPose();
+            if (!camera) await initCamera();
+            isRunning = true;
+            isPaused = false;
+            frozenLandmarks = null;
+            frozenFrame = null;
+            videoWrapper.classList.remove('paused', 'editing');
+            overlayMsg.style.display = 'none';
+            infoStatus.textContent = '实时检测中';
+            infoDragPoint.textContent = '-';
+            btnStart.disabled = true;
+            btnPause.disabled = false;
+            btnResume.disabled = true;
+            btnReset.disabled = true;
+            btnStop.disabled = false;
+            showToast('摄像头已启动，实时检测中', 'success');
+        }
+
+        // ============================================
+        // 暂停/截图
+        // ============================================
+        function pauseDetection() {
+            if (!isRunning || isPaused) return;
+
+            isPaused = true;
+            videoWrapper.classList.add('paused', 'editing');
+            overlayMsg.style.display = 'block';
+
+            // 冻结当前关键点（深拷贝）
+            if (currentLandmarks) {
+                frozenLandmarks = currentLandmarks.map(lm => ({ x: lm.x, y: lm.y, z: lm.z, visibility: lm.visibility }));
+            }
+
+            // 捕获当前视频帧
+            canvas.width = videoEl.videoWidth || 1280;
+            canvas.height = videoEl.videoHeight || 720;
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            frozenFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // 绘制冻结骨骼
+            drawFrozenSkeleton();
+
+            infoStatus.textContent = '已暂停（可拖拽编辑）';
+            btnPause.disabled = true;
+            btnResume.disabled = false;
+            btnReset.disabled = false;
+            document.getElementById('toolMove').disabled = false;
+            showToast('画面已冻结，可拖拽关键点调整姿态', 'info');
+        }
+
+        // ============================================
+        // 恢复检测
+        // ============================================
+        function resumeDetection() {
+            isPaused = false;
+            frozenLandmarks = null;
+            frozenFrame = null;
+            dragPointIndex = -1;
+            videoWrapper.classList.remove('paused', 'editing');
+            overlayMsg.style.display = 'none';
+            infoStatus.textContent = '实时检测中';
+            infoDragPoint.textContent = '-';
+            btnPause.disabled = false;
+            btnResume.disabled = true;
+            btnReset.disabled = true;
+            document.getElementById('toolMove').disabled = true;
+            showToast('已恢复实时检测', 'success');
+        }
+
+        // ============================================
+        // 重置姿态（恢复原始检测结果）
+        // ============================================
+        function resetPose() {
+            if (!isPaused || !currentLandmarks) return;
+            frozenLandmarks = currentLandmarks.map(lm => ({ x: lm.x, y: lm.y, z: lm.z, visibility: lm.visibility }));
+            dragPointIndex = -1;
+            infoDragPoint.textContent = '-';
+            drawFrozenSkeleton();
+            showToast('姿态已重置为原始检测结果', 'info');
+        }
+
+        // ============================================
+        // 停止摄像头
+        // ============================================
+        function stopAll() {
+            isRunning = false;
+            isPaused = false;
+            frozenLandmarks = null;
+            frozenFrame = null;
+            dragPointIndex = -1;
+            currentLandmarks = null;
+
+            videoWrapper.classList.remove('paused', 'editing');
+            overlayMsg.style.display = 'none';
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            infoStatus.textContent = '已停止';
+            infoLandmarks.textContent = '0';
+            infoDragPoint.textContent = '-';
+
+            btnStart.disabled = false;
+            btnPause.disabled = true;
+            btnResume.disabled = true;
+            btnReset.disabled = true;
+            btnStop.disabled = true;
+            document.getElementById('toolMove').disabled = true;
+        }
+
+        // ============================================
+        // 画布交互：拖拽关键点
+        // ============================================
+        function getCanvasPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function getTouchCanvasPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const touch = e.touches[0];
+            return {
+                x: (touch.clientX - rect.left) * scaleX,
+                y: (touch.clientY - rect.top) * scaleY
+            };
+        }
+
+        function findNearestLandmark(pos) {
+            if (!frozenLandmarks) return -1;
+            const threshold = 30; // 像素阈值
+            let minDist = Infinity;
+            let minIdx = -1;
+
+            frozenLandmarks.forEach((lm, i) => {
+                const lx = lm.x * canvas.width;
+                const ly = lm.y * canvas.height;
+                const dist = Math.sqrt((pos.x - lx) ** 2 + (pos.y - ly) ** 2);
+                if (dist < threshold && dist < minDist) {
+                    minDist = dist;
+                    minIdx = i;
+                }
+            });
+            return minIdx;
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!isPaused || currentTool !== 'move') return;
+            const pos = getCanvasPos(e);
+            dragPointIndex = findNearestLandmark(pos);
+            if (dragPointIndex >= 0) {
+                infoDragPoint.textContent = `${dragPointIndex} (${LANDMARK_NAMES[dragPointIndex] || '未知'})`;
+                canvas.style.cursor = 'grabbing';
+                drawFrozenSkeleton();
+                e.preventDefault();
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isPaused) return;
+            const pos = getCanvasPos(e);
+
+            if (dragPointIndex >= 0 && currentTool === 'move') {
+                // 拖拽中：更新关键点位置
+                frozenLandmarks[dragPointIndex].x = Math.max(0, Math.min(1, pos.x / canvas.width));
+                frozenLandmarks[dragPointIndex].y = Math.max(0, Math.min(1, pos.y / canvas.height));
+                drawFrozenSkeleton();
+                e.preventDefault();
+            } else {
+                // 悬停检测：改变光标样式
+                const near = findNearestLandmark(pos);
+                canvas.style.cursor = near >= 0 ? 'grab' : 'crosshair';
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (dragPointIndex >= 0) {
+                dragPointIndex = -1;
+                infoDragPoint.textContent = '-';
+                canvas.style.cursor = 'crosshair';
+                drawFrozenSkeleton();
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (dragPointIndex >= 0) {
+                dragPointIndex = -1;
+                infoDragPoint.textContent = '-';
+                canvas.style.cursor = 'default';
+                drawFrozenSkeleton();
+            }
+        });
+
+        // 触摸事件
+        canvas.addEventListener('touchstart', (e) => {
+            if (!isPaused || currentTool !== 'move') return;
+            const pos = getTouchCanvasPos(e);
+            dragPointIndex = findNearestLandmark(pos);
+            if (dragPointIndex >= 0) {
+                infoDragPoint.textContent = `${dragPointIndex} (${LANDMARK_NAMES[dragPointIndex] || '未知'})`;
+                drawFrozenSkeleton();
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isPaused || dragPointIndex < 0 || currentTool !== 'move') return;
+            const pos = getTouchCanvasPos(e);
+            frozenLandmarks[dragPointIndex].x = Math.max(0, Math.min(1, pos.x / canvas.width));
+            frozenLandmarks[dragPointIndex].y = Math.max(0, Math.min(1, pos.y / canvas.height));
+            drawFrozenSkeleton();
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => {
+            if (dragPointIndex >= 0) {
+                dragPointIndex = -1;
+                infoDragPoint.textContent = '-';
+                drawFrozenSkeleton();
+            }
+        });
+
+        // ============================================
+        // 工具切换
+        // ============================================
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTool = btn.dataset.tool;
+
+                if (currentTool === 'export') {
+                    exportLandmarks();
+                    // 恢复为move工具
+                    setTimeout(() => {
+                        document.getElementById('toolMove').classList.add('active');
+                        btn.classList.remove('active');
+                        currentTool = 'move';
+                    }, 500);
+                }
+            });
+        });
+
+        // ============================================
+        // 导出坐标
+        // ============================================
+        function exportLandmarks() {
+            const data = frozenLandmarks || currentLandmarks;
+            if (!data) {
+                showToast('没有可导出的关键点数据', 'error');
+                return;
+            }
+
+            const exportData = data.map((lm, i) => ({
+                index: i,
+                name: LANDMARK_NAMES[i] || `point_${i}`,
+                x: lm.x.toFixed(4),
+                y: lm.y.toFixed(4),
+                z: lm.z ? lm.z.toFixed(4) : '0',
+                visibility: lm.visibility ? lm.visibility.toFixed(4) : '1.0'
+            }));
+
+            const json = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pose_landmarks_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('关键点坐标已导出', 'success');
+        }
+
+        // ============================================
+        // 按钮事件
+        // ============================================
+        btnStart.addEventListener('click', startDetection);
+        btnPause.addEventListener('click', pauseDetection);
+        btnResume.addEventListener('click', resumeDetection);
+        btnReset.addEventListener('click', resetPose);
+        btnStop.addEventListener('click', stopAll);
+
+        // ============================================
+        // 键盘快捷键
+        // ============================================
+        document.addEventListener('keydown', (e) => {
+            if (e.key === ' ' && isRunning && !isPaused) {
+                e.preventDefault();
+                pauseDetection();
+            } else if (e.key === ' ' && isRunning && isPaused) {
+                e.preventDefault();
+                resumeDetection();
+            } else if (e.key === 'r' && isPaused) {
+                e.preventDefault();
+                resetPose();
+            } else if (e.key === 'e' && isPaused) {
+                e.preventDefault();
+                exportLandmarks();
+            }
+        });
+
+        // ============================================
+        // 初始化
+        // ============================================
+        infoStatus.textContent = '点击"开始摄像头"启动';
+    </script>
+</body>
+</html>

@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="admin.title">520mus License Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a3e, #0d1b2a);
+            padding: 20px 40px;
+            border-bottom: 2px solid #00d4ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { color: #00d4ff; font-size: 1.5em; }
+        .header .subtitle { color: #888; font-size: 0.85em; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #1a1a3e; }
+        .tab-btn {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.3s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab-btn:hover { color: #00d4ff; }
+        .tab-btn.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card {
+            background: #111133;
+            border: 1px solid #1a1a4e;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            color: #00d4ff;
+            margin-bottom: 16px;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            color: #aaa;
+            margin-bottom: 6px;
+            font-size: 0.85em;
+        }
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #2a2a5e;
+            border-radius: 8px;
+            background: #0a0a2e;
+            color: #fff;
+            font-size: 0.95em;
+            font-family: 'Consolas', 'Courier New', monospace;
+            transition: border-color 0.3s;
+        }
+        .form-input:focus { outline: none; border-color: #00d4ff; }
+        .form-row { display: flex; gap: 12px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-primary { background: #00d4ff; color: #0a0a1a; }
+        .btn-primary:hover { background: #00b8e0; box-shadow: 0 0 20px rgba(0,212,255,0.4); }
+        .btn-success { background: #00cc66; color: #0a0a1a; }
+        .btn-success:hover { background: #00b359; }
+        .btn-danger { background: #ff4444; color: #fff; }
+        .btn-danger:hover { background: #e03333; }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #2a2a5e;
+            color: #aaa;
+        }
+        .btn-outline:hover { border-color: #00d4ff; color: #00d4ff; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8em; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        th {
+            text-align: left;
+            padding: 12px;
+            background: #0a0a2e;
+            color: #00d4ff;
+            font-weight: 600;
+            border-bottom: 2px solid #1a1a4e;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1a1a3e;
+        }
+        tr:hover td { background: rgba(0,212,255,0.05); }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.78em;
+            font-weight: 600;
+        }
+        .badge-success { background: rgba(0,204,102,0.2); color: #00cc66; }
+        .badge-warning { background: rgba(255,170,0,0.2); color: #ffaa00; }
+        .badge-info { background: rgba(0,212,255,0.2); color: #00d4ff; }
+        .code-block {
+            background: #0a0a2e;
+            border: 1px solid #1a1a4e;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85em;
+            color: #00d4ff;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .result-box {
+            background: #0a0a2e;
+            border: 1px solid #00cc66;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+            display: none;
+        }
+        .result-box.show { display: block; }
+        .result-box .license-key {
+            font-size: 1.4em;
+            font-family: 'Consolas', monospace;
+            color: #00d4ff;
+            letter-spacing: 2px;
+            text-align: center;
+            padding: 10px;
+        }
+        .copy-btn { cursor: pointer; }
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            animation: slideDown 0.3s ease;
+        }
+        .toast.success { background: #00cc66; color: #fff; }
+        .toast.error { background: #ff4444; color: #fff; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .config-item {
+            background: #0a0a2e;
+            border: 1px solid #1a1a4e;
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .config-item .label { color: #888; font-size: 0.8em; margin-bottom: 4px; }
+        .config-item .value { color: #00d4ff; font-family: 'Consolas', monospace; font-size: 0.9em; word-break: break-all; }
+        .search-box { position: relative; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; }
+        .info-row .label { color: #888; }
+        .info-row .value { color: #fff; font-family: 'Consolas', monospace; }
+        .empty-state { text-align: center; padding: 40px; color: #666; }
+    </style>
+
+    <script src="i18n.js"></script>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1 data-i18n="admin.title">520mus License Admin Panel</h1>
+            <span class="subtitle" data-i18n="admin.subtitle">License Key Management System</span>
+        </div>
+        <div style="color: #888; font-size: 0.85em;">
+            <span data-i18n="admin.version">v1.0 | Powered by 520mus.top</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Tab导航 -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="tab-generate" data-i18n="admin.tab_generate">Generate Keys</button>
+            <button class="tab-btn" data-tab="tab-list" data-i18n="admin.tab_list">Key List</button>
+            <button class="tab-btn" data-tab="tab-validate" data-i18n="admin.tab_validate">Validate Key</button>
+            <button class="tab-btn" data-tab="tab-config" data-i18n="admin.tab_config">System Config</button>
+            <button class="tab-btn" data-tab="tab-storage" data-i18n="admin.tab_storage">Storage Check</button>
+        </div>
+
+        <!-- Tab 1: 生成秘钥 -->
+        <div class="tab-content active" id="tab-generate">
+            <div class="card">
+                <h3>生成新许可证秘钥</h3>
+                <div class="form-group">
+                    <label>机器标识 (Machine ID)</label>
+                    <div class="form-row">
+                        <input type="text" class="form-input" id="genMachineId" placeholder="输入机器ID或留空自动生成">
+                        <button class="btn btn-outline btn-sm" onclick="autoFillMachineId()">自动获取</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>自定义密钥前缀（可选，默认按时间戳生成）</label>
+                    <input type="text" class="form-input" id="genCustomSeed" placeholder="留空则使用当前时间戳">
+                </div>
+                <button class="btn btn-primary" onclick="generateLicense()">生成秘钥</button>
+                <div class="result-box" id="genResult">
+                    <div style="color: #888; margin-bottom: 8px;">生成的许可证秘钥：</div>
+                    <div class="license-key" id="genLicenseKey">-</div>
+                    <div style="margin-top: 12px; color: #888; font-size: 0.85em;">
+                        生成信息：<span id="genInfo" style="color: #aaa;"></span>
+                    </div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button class="btn btn-success btn-sm" onclick="copyLicense('genLicenseKey')">复制秘钥</button>
+                        <button class="btn btn-outline btn-sm" onclick="addToLicenseList()">添加到秘钥列表</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>批量生成秘钥</h3>
+                <div class="form-group">
+                    <label>生成数量</label>
+                    <input type="number" class="form-input" id="batchCount" value="5" min="1" max="50" style="width: 120px;">
+                </div>
+                <button class="btn btn-primary" onclick="batchGenerate()">批量生成</button>
+                <div class="result-box" id="batchResult">
+                    <div style="color: #888; margin-bottom: 8px;">批量生成的秘钥：</div>
+                    <div id="batchLicenseList" style="font-family: 'Consolas', monospace; line-height: 2;"></div>
+                    <button class="btn btn-outline btn-sm" style="margin-top: 12px;" onclick="copyAllBatch()">一键复制全部</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: 秘钥列表 -->
+        <div class="tab-content" id="tab-list">
+            <div class="card">
+                <h3>所有有效许可证秘钥</h3>
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <input type="text" class="form-input" id="searchLicense" placeholder="搜索秘钥..." style="flex: 1;">
+                    <button class="btn btn-primary btn-sm" onclick="filterLicenses()">搜索</button>
+                    <button class="btn btn-outline btn-sm" onclick="refreshLicenseList()">刷新</button>
+                </div>
+                <table id="licenseTable">
+                    <thead>
+                        <tr>
+                            <th>许可证秘钥</th>
+                            <th>适用页面</th>
+                            <th>状态</th>
+                            <th>添加时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="licenseTableBody">
+                    </tbody>
+                </table>
+                <div class="empty-state" id="emptyState" style="display:none;">暂无秘钥记录</div>
+            </div>
+        </div>
+
+        <!-- Tab 3: 验证秘钥 -->
+        <div class="tab-content" id="tab-validate">
+            <div class="card">
+                <h3>验证许可证秘钥</h3>
+                <div class="form-group">
+                    <label>输入要验证的秘钥</label>
+                    <input type="text" class="form-input" id="validateInput" placeholder="例如: 520MUS-ABCD-1234-EFGH-5678">
+                </div>
+                <button class="btn btn-primary" onclick="validateLicense()">验证秘钥</button>
+                <div class="result-box" id="validateResult">
+                    <div class="info-row"><span class="label">验证结果：</span><span class="value" id="valResult">-</span></div>
+                    <div class="info-row"><span class="label">格式检查：</span><span class="value" id="valFormat">-</span></div>
+                    <div class="info-row"><span class="label">匹配类型：</span><span class="value" id="valType">-</span></div>
+                    <div class="info-row"><span class="label">消息：</span><span class="value" id="valMessage">-</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 4: 系统配置 -->
+        <div class="tab-content" id="tab-config">
+            <div class="card">
+                <h3>License系统配置</h3>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <div class="label">加密密钥 (SECRET_KEY)</div>
+                        <div class="value">520mus.top_2024_pose_detection_secret</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">秘钥格式</div>
+                        <div class="value">520MUS-XXXX-XXXX-XXXX-XXXX</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">总试用期</div>
+                        <div class="value">90天</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">无感宽限期</div>
+                        <div class="value">前31天（无需弹窗）</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">License有效期</div>
+                        <div class="value">60天（2个月）</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">存储方式</div>
+                        <div class="value">localStorage (btoa编码)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>存储键名映射</h3>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <div class="label">license</div>
+                        <div class="value">pd_lic_key_v1 (btoa)</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">installDate</div>
+                        <div class="value">pd_inst_date_v1 (btoa)</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">verified</div>
+                        <div class="value">pd_verified_v1 (btoa)</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">machineId</div>
+                        <div class="value">pd_machine_v1 (btoa)</div>
+                    </div>
+                    <div class="config-item">
+                        <div class="label">licenseDate</div>
+                        <div class="value">pd_lic_date_v1 (btoa)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>生成算法</h3>
+                <div class="code-block">
+// 1. 获取机器ID（浏览器指纹）
+machineId = btoa(userAgent + language + screenSize + colorDepth + timezone)
+
+// 2. 计算哈希
+data = machineId + "_" + SECRET_KEY + "_" + timestamp
+hash = simpleHash(data)  // 返回8位16进制大写
+
+// 3. 格式化
+license = "520MUS-" + hash[0:4] + "-" + hash[4:8] + "-" + hash[8:12] + "-" + hash[12:16]
+
+// 4. simpleHash 实现
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>页面分布</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>页面</th>
+                            <th>文件名</th>
+                            <th>License验证</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>统一入口</td><td>indexl.html</td><td><span class="badge badge-success">已启用</span></td></tr>
+                        <tr><td>乒乓球/高尔夫</td><td>pose_detection.html</td><td><span class="badge badge-success">已启用</span></td></tr>
+                        <tr><td>保龄球</td><td>bowling_pose_detection.html</td><td><span class="badge badge-success">已启用</span></td></tr>
+                        <tr><td>太极拳</td><td>taiji_pose_detection.html</td><td><span class="badge badge-success">已启用</span></td></tr>
+                        <tr><td>图片姿势对比</td><td>image_pose_detection.html</td><td><span class="badge badge-success">已启用</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab 5: 存储检查 -->
+        <div class="tab-content" id="tab-storage">
+            <div class="card">
+                <h3>当前浏览器 localStorage 状态</h3>
+                <button class="btn btn-primary btn-sm" style="margin-bottom: 16px;" onclick="refreshStorage()">刷新状态</button>
+                <button class="btn btn-danger btn-sm" style="margin-bottom: 16px; margin-left: 8px;" onclick="clearAllStorage()">清除全部存储</button>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>键名 (原始)</th>
+                            <th>键名 (编码后)</th>
+                            <th>值</th>
+                            <th>解码值</th>
+                        </tr>
+                    </thead>
+                    <tbody id="storageTableBody">
+                    </tbody>
+                </table>
+                <div class="empty-state" id="storageEmpty" style="display:none;">当前无存储数据</div>
+            </div>
+
+            <div class="card">
+                <h3>试用状态计算</h3>
+                <div class="info-row"><span class="label">安装日期：</span><span class="value" id="trialInstallDate">-</span></div>
+                <div class="info-row"><span class="label">已使用天数：</span><span class="value" id="trialElapsed">-</span></div>
+                <div class="info-row"><span class="label">试用剩余天数：</span><span class="value" id="trialRemaining">-</span></div>
+                <div class="info-row"><span class="label">宽限期剩余：</span><span class="value" id="graceRemaining">-</span></div>
+                <div class="info-row"><span class="label">License验证日期：</span><span class="value" id="licVerifyDate">-</span></div>
+                <div class="info-row"><span class="label">License剩余天数：</span><span class="value" id="licRemaining">-</span></div>
+                <div class="info-row"><span class="label">当前状态：</span><span class="value" id="currentStatus">-</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // License系统配置（与各页面保持一致）
+        // ============================================
+        const SECRET_KEY = '520mus.top_2024_pose_detection_secret';
+        const LICENSE_VALID_DAYS = 60;
+        const LICENSE_VALID_MS = LICENSE_VALID_DAYS * 24 * 60 * 60 * 1000;
+        const TRIAL_DAYS = 90;
+        const GRACE_PERIOD_DAYS = 31;
+        const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+        const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+
+        const STORAGE_KEYS = {
+            license: btoa('pd_lic_key_v1'),
+            installDate: btoa('pd_inst_date_v1'),
+            verified: btoa('pd_verified_v1'),
+            machineId: btoa('pd_machine_v1'),
+            licenseDate: btoa('pd_lic_date_v1')
+        };
+
+        // 预设有效秘钥（各页面硬编码的）
+        const PRESET_LICENSES = [
+            { key: '520MUS-ABCD-1234-EFGH-5678', pages: ['全部页面'], desc: '示例通用密钥1' },
+            { key: '520MUS-POS3-DETE-CTIO-N202', pages: ['全部页面'], desc: '示例通用密钥2' },
+            { key: '520MUS-TABL-ETEN-NIS-GO24', pages: ['全部页面'], desc: '乒乓球专用' },
+            { key: '520MUS-GOLF-SWNG-POSE-2024', pages: ['全部页面'], desc: '高尔夫球专用' },
+            { key: '520MUS-BOWL-INGS-PEED-2024', pages: ['保龄球', '太极拳', '图片对比', '统一入口'], desc: '保龄球专用' },
+            { key: '520MUS-TAIJ-QUAN-POSE-2024', pages: ['保龄球', '太极拳', '图片对比', '统一入口'], desc: '太极拳专用' },
+            { key: '520MUS-UNIF-IED-ENTR-Y202', pages: ['统一入口'], desc: '统一入口专用' }
+        ];
+
+        // 管理员自定义秘钥（存储在localStorage）
+        const ADMIN_STORAGE_KEY = '520mus_admin_licenses';
+
+        function getAdminLicenses() {
+            try {
+                const data = localStorage.getItem(ADMIN_STORAGE_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveAdminLicenses(licenses) {
+            localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(licenses));
+        }
+
+        // ============================================
+        // 工具函数
+        // ============================================
+        function simpleHash(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash | 0;
+            }
+            // 生成16位hex：对输入做两次不同偏移的hash，拼接得到完整16位
+            const h1 = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+            let hash2 = 0x6a09e667;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash2 ^= char;
+                hash2 = ((hash2 << 7) | (hash2 >>> 25)) >>> 0;
+            }
+            const h2 = Math.abs(hash2).toString(16).toUpperCase().padStart(8, '0');
+            return h1 + h2;
+        }
+
+        function generateMachineId() {
+            const nav = window.navigator;
+            const screen = window.screen;
+            const components = [
+                nav.userAgent,
+                nav.language,
+                screen.width + 'x' + screen.height,
+                screen.colorDepth,
+                new Date().getTimezoneOffset()
+            ];
+            return btoa(components.join('|')).substring(0, 32);
+        }
+
+        function validateLicenseFormat(license) {
+            const pattern = /^520MUS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+            return pattern.test(license.toUpperCase());
+        }
+
+        function generateLicenseFromMachineId(machineId, seed) {
+            const timestamp = seed || '2024';
+            const data = `${machineId}_${SECRET_KEY}_${timestamp}`;
+            const hash = simpleHash(data);
+            return `520MUS-${hash.substring(0, 4)}-${hash.substring(4, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}`;
+        }
+
+        function showToast(message, type) {
+            const old = document.querySelector('.toast');
+            if (old) old.remove();
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2500);
+        }
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => showToast('已复制到剪贴板', 'success'));
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('已复制到剪贴板', 'success');
+            }
+        }
+
+        // ============================================
+        // Tab切换
+        // ============================================
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // ============================================
+        // Tab 1: 生成秘钥
+        // ============================================
+        function autoFillMachineId() {
+            document.getElementById('genMachineId').value = generateMachineId();
+        }
+
+        function generateLicense() {
+            let machineId = document.getElementById('genMachineId').value.trim();
+            if (!machineId) {
+                machineId = generateMachineId();
+                document.getElementById('genMachineId').value = machineId;
+            }
+
+            const customSeed = document.getElementById('genCustomSeed').value.trim();
+            const license = generateLicenseFromMachineId(machineId, customSeed || undefined);
+
+            document.getElementById('genLicenseKey').textContent = license;
+            document.getElementById('genInfo').textContent =
+                `MachineID: ${machineId.substring(0, 16)}... | 时间戳: ${customSeed || Date.now()}`;
+            document.getElementById('genResult').classList.add('show');
+        }
+
+        function copyLicense(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            copyToClipboard(text);
+        }
+
+        function addToLicenseList() {
+            const license = document.getElementById('genLicenseKey').textContent;
+            if (license === '-' || !license) {
+                showToast('请先生成秘钥', 'error');
+                return;
+            }
+            const adminLicenses = getAdminLicenses();
+            if (adminLicenses.find(l => l.key === license)) {
+                showToast('该秘钥已存在列表中', 'error');
+                return;
+            }
+            adminLicenses.push({
+                key: license,
+                pages: ['自定义'],
+                desc: '后台生成',
+                addedAt: new Date().toISOString()
+            });
+            saveAdminLicenses(adminLicenses);
+            showToast('已添加到秘钥列表', 'success');
+        }
+
+        function batchGenerate() {
+            const count = parseInt(document.getElementById('batchCount').value) || 5;
+            const machineId = document.getElementById('genMachineId').value.trim() || generateMachineId();
+            const licenses = [];
+
+            for (let i = 0; i < count; i++) {
+                const seed = (Date.now() + i * 1000).toString();
+                licenses.push(generateLicenseFromMachineId(machineId, seed));
+            }
+
+            const listEl = document.getElementById('batchLicenseList');
+            listEl.innerHTML = licenses.map((l, i) =>
+                `<div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #666;">#${i + 1}</span>
+                    <code style="color: #00d4ff;">${l}</code>
+                    <button class="btn btn-outline btn-sm" onclick="copyToClipboard('${l}')">复制</button>
+                </div>`
+            ).join('');
+
+            document.getElementById('batchResult').classList.add('show');
+            window._batchLicenses = licenses;
+        }
+
+        function copyAllBatch() {
+            if (window._batchLicenses) {
+                copyToClipboard(window._batchLicenses.join('\n'));
+            }
+        }
+
+        // ============================================
+        // Tab 2: 秘钥列表
+        // ============================================
+        function getAllLicenses() {
+            const adminLicenses = getAdminLicenses();
+            const all = [...PRESET_LICENSES.map(l => ({ ...l, type: 'preset' }))];
+            adminLicenses.forEach(l => {
+                if (!all.find(a => a.key === l.key)) {
+                    all.push({ ...l, type: 'custom' });
+                }
+            });
+            return all;
+        }
+
+        function renderLicenseTable(filter) {
+            const all = getAllLicenses();
+            const filtered = filter
+                ? all.filter(l => l.key.toUpperCase().includes(filter.toUpperCase()) || l.desc.includes(filter))
+                : all;
+            const tbody = document.getElementById('licenseTableBody');
+            const empty = document.getElementById('emptyState');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            tbody.innerHTML = filtered.map((l, i) => `
+                <tr>
+                    <td>
+                        <code style="color: #00d4ff; font-size: 0.9em;">${l.key}</code>
+                        ${l.type === 'custom' ? '<span class="badge badge-info" style="margin-left: 8px;">自定义</span>' : '<span class="badge badge-warning" style="margin-left: 8px;">预设</span>'}
+                    </td>
+                    <td>${l.pages.join('、')}</td>
+                    <td><span class="badge badge-success">有效</span></td>
+                    <td>${l.addedAt ? new Date(l.addedAt).toLocaleString('zh-CN') : '系统预设'}</td>
+                    <td>
+                        <button class="btn btn-outline btn-sm" onclick="copyToClipboard('${l.key}')">复制</button>
+                        ${l.type === 'custom' ? `<button class="btn btn-danger btn-sm" onclick="deleteLicense('${l.key}')" style="margin-left: 4px;">删除</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterLicenses() {
+            const search = document.getElementById('searchLicense').value.trim();
+            renderLicenseTable(search);
+        }
+
+        function refreshLicenseList() {
+            document.getElementById('searchLicense').value = '';
+            renderLicenseTable();
+        }
+
+        function deleteLicense(key) {
+            if (!confirm(`确定删除秘钥 "${key}" 吗？`)) return;
+            const adminLicenses = getAdminLicenses();
+            const updated = adminLicenses.filter(l => l.key !== key);
+            saveAdminLicenses(updated);
+            renderLicenseTable();
+            showToast('秘钥已删除', 'success');
+        }
+
+        // ============================================
+        // Tab 3: 验证秘钥
+        // ============================================
+        function validateLicense() {
+            const input = document.getElementById('validateInput').value.trim().toUpperCase();
+            const resultBox = document.getElementById('validateResult');
+            resultBox.classList.add('show');
+
+            document.getElementById('valFormat').textContent = validateLicenseFormat(input) ? '通过' : '不通过';
+            document.getElementById('valFormat').style.color = validateLicenseFormat(input) ? '#00cc66' : '#ff4444';
+
+            if (!validateLicenseFormat(input)) {
+                document.getElementById('valResult').textContent = '无效';
+                document.getElementById('valResult').style.color = '#ff4444';
+                document.getElementById('valType').textContent = '格式错误';
+                document.getElementById('valMessage').textContent = '秘钥格式必须为 520MUS-XXXX-XXXX-XXXX-XXXX';
+                return;
+            }
+
+            const allLicenses = getAllLicenses();
+            const found = allLicenses.find(l => l.key === input);
+
+            if (found) {
+                document.getElementById('valResult').textContent = '有效';
+                document.getElementById('valResult').style.color = '#00cc66';
+                document.getElementById('valType').textContent = found.type === 'preset' ? '预设密钥' : '自定义密钥';
+                document.getElementById('valMessage').textContent = `适用于: ${found.pages.join('、')} - ${found.desc}`;
+            } else {
+                // 检查是否可以被动态生成（machine_id匹配）
+                const currentMachineId = generateMachineId();
+                const expected = generateLicenseFromMachineId(currentMachineId);
+                if (input === expected) {
+                    document.getElementById('valResult').textContent = '有效';
+                    document.getElementById('valResult').style.color = '#00cc66';
+                    document.getElementById('valType').textContent = '动态生成';
+                    document.getElementById('valMessage').textContent = '与当前机器ID匹配的动态密钥';
+                } else {
+                    document.getElementById('valResult').textContent = '无效';
+                    document.getElementById('valResult').style.color = '#ff4444';
+                    document.getElementById('valType').textContent = '未找到';
+                    document.getElementById('valMessage').textContent = '该秘钥不在有效密钥列表中';
+                }
+            }
+        }
+
+        // ============================================
+        // Tab 5: 存储检查
+        // ============================================
+        function refreshStorage() {
+            const tbody = document.getElementById('storageTableBody');
+            const empty = document.getElementById('storageEmpty');
+            const keyNames = Object.values(STORAGE_KEYS);
+            const rows = [];
+
+            keyNames.forEach(encodedKey => {
+                const value = localStorage.getItem(encodedKey);
+                if (value !== null) {
+                    let decodedValue = '';
+                    try { decodedValue = atob(value); } catch (e) { decodedValue = value; }
+
+                    // 找到原始键名
+                    let originalName = '';
+                    for (const [k, v] of Object.entries(STORAGE_KEYS)) {
+                        if (v === encodedKey) { originalName = k; break; }
+                    }
+
+                    rows.push(`
+                        <tr>
+                            <td><code style="color: #00d4ff;">${originalName}</code></td>
+                            <td><code style="color: #888;">${encodedKey}</code></td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${value}</td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${decodedValue}</td>
+                        </tr>
+                    `);
+                }
+            });
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+            } else {
+                empty.style.display = 'none';
+                tbody.innerHTML = rows.join('');
+            }
+
+            // 更新试用状态
+            updateTrialStatus();
+        }
+
+        function updateTrialStatus() {
+            const installDateEnc = localStorage.getItem(STORAGE_KEYS.installDate);
+            const licenseDateEnc = localStorage.getItem(STORAGE_KEYS.licenseDate);
+            const verifiedEnc = localStorage.getItem(STORAGE_KEYS.verified);
+
+            const now = Date.now();
+
+            if (installDateEnc) {
+                const installDate = parseInt(atob(installDateEnc));
+                const elapsed = now - installDate;
+                const trialRemaining = Math.max(0, TRIAL_MS - elapsed);
+                const graceRemaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
+
+                document.getElementById('trialInstallDate').textContent = new Date(installDate).toLocaleString('zh-CN');
+                document.getElementById('trialElapsed').textContent = Math.floor(elapsed / (24 * 60 * 60 * 1000)) + '天';
+                document.getElementById('trialRemaining').textContent = Math.ceil(trialRemaining / (24 * 60 * 60 * 1000)) + '天';
+                document.getElementById('graceRemaining').textContent = Math.ceil(graceRemaining / (24 * 60 * 60 * 1000)) + '天';
+            } else {
+                document.getElementById('trialInstallDate').textContent = '未设置';
+                document.getElementById('trialElapsed').textContent = '-';
+                document.getElementById('trialRemaining').textContent = '-';
+                document.getElementById('graceRemaining').textContent = '-';
+            }
+
+            if (licenseDateEnc) {
+                const licenseDate = parseInt(atob(licenseDateEnc));
+                const licElapsed = now - licenseDate;
+                const licRemaining = Math.max(0, LICENSE_VALID_MS - licElapsed);
+                document.getElementById('licVerifyDate').textContent = new Date(licenseDate).toLocaleString('zh-CN');
+                document.getElementById('licRemaining').textContent = Math.ceil(licRemaining / (24 * 60 * 60 * 1000)) + '天';
+            } else {
+                document.getElementById('licVerifyDate').textContent = '未验证';
+                document.getElementById('licRemaining').textContent = '-';
+            }
+
+            if (verifiedEnc && atob(verifiedEnc) === 'true') {
+                const licRemaining = document.getElementById('licRemaining').textContent;
+                if (licRemaining === '0天') {
+                    document.getElementById('currentStatus').innerHTML = '<span style="color: #ff4444;">License已过期</span>';
+                } else {
+                    document.getElementById('currentStatus').innerHTML = '<span style="color: #00cc66;">已授权</span>';
+                }
+            } else {
+                const trialRemaining = document.getElementById('trialRemaining').textContent;
+                if (trialRemaining === '0天' || trialRemaining === '-') {
+                    document.getElementById('currentStatus').innerHTML = '<span style="color: #ffaa00;">试用期</span>';
+                } else {
+                    document.getElementById('currentStatus').innerHTML = '<span style="color: #ffaa00;">试用期</span>';
+                }
+            }
+        }
+
+        function clearAllStorage() {
+            if (!confirm('确定要清除所有许可证存储数据吗？\n\n这将清除：\n- 已验证的许可证\n- 安装日期\n- 机器ID\n- 自定义秘钥列表\n\n此操作不可恢复！')) return;
+
+            Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+            localStorage.removeItem(ADMIN_STORAGE_KEY);
+            showToast('已清除所有存储数据', 'success');
+            refreshStorage();
+            refreshLicenseList();
+        }
+
+        // ============================================
+        // 初始化
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            renderLicenseTable();
+            refreshStorage();
+
+            // 搜索框回车事件
+            document.getElementById('searchLicense').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') filterLicenses();
+            });
+
+            // 验证框回车事件
+            document.getElementById('validateInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') validateLicense();
+            });
+        });
+    </script>
+</body>
+</html>
