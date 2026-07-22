@@ -312,7 +312,7 @@
 
         <!-- 右：轨迹画布 -->
         <div class="card trail-panel">
-            <h3>运动轨迹 (俯视图)</h3>
+            <h3>运动轨迹 (俯视图) <button id="rotateTrailBtn" class="accent" style="font-size:11px;padding:2px 8px;margin-left:8px;">旋转视角</button><span id="rotateAngle" style="color:var(--text-dim);font-size:11px;margin-left:6px;"></span></h3>
             <canvas id="trailCanvas" width="640" height="400"></canvas>
         </div>
     </div>
@@ -336,6 +336,7 @@
         <button id="loadVideoBtn" class="accent">加载视频</button>
         <input type="file" id="videoFileInput" accept="video/*" style="display:none;">
         <button id="cameraBtn" class="accent">启动摄像头</button>
+        <button id="switchCameraBtn" class="accent" style="display:none;">切换摄像头</button>
         <button id="extractBtn" class="primary">提取轨迹</button>
         <button id="playbackBtn" class="accent">轨迹回放</button>
         <button id="resetBtn" class="danger">重置 (R)</button>
@@ -486,13 +487,42 @@
         let prevBallPos = null;      // 上一帧球位置 (用于连续性)
         let allTrajectories = [];    // 所有候选轨迹
 
+        // ===== 摄像头切换 =====
+        let currentFacingMode = 'user'; // 'user' 或 'environment'
+
+        // ===== 转速计算 =====
+        let prevBallROI = null;       // 上一帧球区域灰度图
+        let prevBallCenter = null;    // 上一帧球中心
+        let ballRPM = 0;              // 当前转速
+        let rpmWindow = [];           // 转速滑动窗口
+        const RPM_ROI_SIZE = 40;      // 转速分析区域大小
+
         // 球道标定 (手动四个角点归一化坐标)
         let laneCorners = null; // [{x,y}, {x,y}, {x,y}, {x,y}] 左上、右上、右下、左下
 
+        // ===== 轨迹旋转 =====
+        let trailRotation = 0;       // 当前旋转角度 (度)
+        let isRotating = false;      // 是否正在旋转模式
+        let rotateStartX = 0;
+        let rotateStartAngle = 0;
+
         // 球道参考线 (归一化坐标, 用于绘制)
-        const FOUL_LINE_Y = 0.15;    // 犯规线
-        const ARROWS_Y = 0.35;       // 箭头标记
-        const PIN_DECK_Y = 0.92;     // 球瓶区
+        // 球瓶区固定在顶部 (画面y=0附近), 犯规线在底部 (画面y=1附近)
+        // ballDirection: +1 = 球向画面底部移动, -1 = 球向画面顶部移动
+        const PIN_DECK_Y = 0.08;     // 球瓶区 (画布顶部)
+        const ARROWS_Y = 0.65;       // 箭头标记
+        const FOUL_LINE_Y = 0.90;    // 犯规线 (画布底部)
+        let ballDirection = 0;       // 自动检测: +1向下, -1向上, 0未检测
+
+        // ==================== 球运动方向检测 ====================
+        function detectBallDirection() {
+            if (trailPoints.length < 8) return;
+            const ys = trailPoints.slice(-8).map(p => p.y);
+            const dy = ys[ys.length - 1] - ys[0];
+            if (Math.abs(dy) > 0.02) {
+                ballDirection = dy > 0 ? 1 : -1;
+            }
+        }
 
         // ==================== 工具函数 ====================
         function hexToRgb(hex) {
@@ -544,6 +574,9 @@
             // 更新 EWA 平滑
             lastPosition = ewaSmooth(point, lastPosition, smoothFactor);
 
+            // 检测球的运动方向
+            detectBallDirection();
+
             // 更新速度
             updateSpeed();
             // 更新拐点
@@ -565,8 +598,13 @@
             breakPointDist = 0;
             entryAngle = 0;
             ballMissCount = 0;
+            ballDirection = 0;
             prevFrameGray = null;
             prevBallPos = null;
+            prevBallROI = null;
+            prevBallCenter = null;
+            ballRPM = 0;
+            rpmWindow = [];
             stopPlayback();
             drawTrail();
             updateDataPanel();
@@ -609,9 +647,18 @@
             const speedFps = distFt / dt;
             const speedMph = speedFps * 0.681818; // ft/s to mph
 
-            // 更新犯规线速度
-            if (p2.y < FOUL_LINE_Y && p1.y >= FOUL_LINE_Y) {
-                foulLineSpeed = speedMph;
+            // 更新犯规线速度 (根据球运动方向自适应)
+            // ballDirection>0: 球向画面底部移动(前摄像头), 犯规线在y=0.90
+            // ballDirection<0: 球向画面顶部移动(后摄像头), 犯规线在y=0.10
+            const foulY = ballDirection < 0 ? (1 - FOUL_LINE_Y) : FOUL_LINE_Y;
+            if (ballDirection < 0) {
+                if (p2.y > foulY && p1.y <= foulY) {
+                    foulLineSpeed = speedMph;
+                }
+            } else {
+                if (p2.y < foulY && p1.y >= foulY) {
+                    foulLineSpeed = speedMph;
+                }
             }
         }
 
@@ -644,7 +691,15 @@
         // ==================== 绘制轨迹 ====================
         function drawTrail() {
             const w = trailCanvas.width, h = trailCanvas.height;
+            trailCtx.save();
             trailCtx.clearRect(0, 0, w, h);
+
+            // 应用旋转
+            if (trailRotation !== 0) {
+                trailCtx.translate(w / 2, h / 2);
+                trailCtx.rotate(trailRotation * Math.PI / 180);
+                trailCtx.translate(-w / 2, -h / 2);
+            }
 
             // 绘制球道背景
             drawLaneOnTrail(w, h);
@@ -657,7 +712,7 @@
                 return;
             }
 
-            // 连线
+            // 连线 (俯视图: 球瓶区=顶部, 犯规线=底部)
             for (let i = 1; i < trailPoints.length; i++) {
                 const p1 = trailPoints[i-1], p2 = trailPoints[i];
                 const alpha = 0.15 + 0.85 * (i / trailPoints.length);
@@ -673,16 +728,17 @@
             // 点
             for (let i = 0; i < trailPoints.length; i++) {
                 const p = trailPoints[i];
+                const px = p.x * w, py = p.y * h;
                 const radius = 2 + 5 * (i / trailPoints.length);
                 const alpha = 0.3 + 0.7 * (i / trailPoints.length);
                 const gradient = trailCtx.createRadialGradient(
-                    p.x * w - radius/2, p.y * h - radius/2, 0,
-                    p.x * w, p.y * h, radius
+                    px - radius/2, py - radius/2, 0,
+                    px, py, radius
                 );
                 gradient.addColorStop(0, `rgba(255, 180, 80, ${alpha})`);
                 gradient.addColorStop(1, `rgba(240, 100, 30, ${alpha * 0.7})`);
                 trailCtx.beginPath();
-                trailCtx.arc(p.x * w, p.y * h, radius, 0, 2 * Math.PI);
+                trailCtx.arc(px, py, radius, 0, 2 * Math.PI);
                 trailCtx.fillStyle = gradient;
                 trailCtx.shadowColor = `rgba(240, 136, 62, ${alpha * 0.3})`;
                 trailCtx.shadowBlur = 10;
@@ -692,12 +748,13 @@
 
             // 最新点高亮
             const last = trailPoints[trailPoints.length - 1];
+            const lx = last.x * w, ly = last.y * h;
             trailCtx.beginPath();
-            trailCtx.arc(last.x * w, last.y * h, 9, 0, 2 * Math.PI);
+            trailCtx.arc(lx, ly, 9, 0, 2 * Math.PI);
             trailCtx.fillStyle = '#fff';
             trailCtx.fill();
             trailCtx.beginPath();
-            trailCtx.arc(last.x * w, last.y * h, 6, 0, 2 * Math.PI);
+            trailCtx.arc(lx, ly, 6, 0, 2 * Math.PI);
             trailCtx.fillStyle = '#f0883e';
             trailCtx.fill();
 
@@ -721,64 +778,29 @@
             trailCtx.font = '12px monospace';
             trailCtx.textAlign = 'right';
             trailCtx.fillText(`点数: ${trailPoints.length}`, w - 10, 20);
+
+            trailCtx.restore();
         }
 
-        // 绘制球道参考线
+        // 绘制球道参考线 (带距离刻度 + 方向箭头)
         function drawLaneOnTrail(w, h) {
             const foulY = FOUL_LINE_Y * h;
             const arrowY = ARROWS_Y * h;
             const pinY = PIN_DECK_Y * h;
 
             // 球道主体
-            const laneLeft = w * 0.15;
-            const laneRight = w * 0.85;
-            trailCtx.fillStyle = 'rgba(139, 90, 43, 0.15)';
+            const laneLeft = w * 0.10;
+            const laneRight = w * 0.90;
+            trailCtx.fillStyle = 'rgba(139, 90, 43, 0.12)';
             trailCtx.fillRect(laneLeft, 0, laneRight - laneLeft, h);
 
             // 球沟
-            trailCtx.fillStyle = 'rgba(60, 40, 20, 0.3)';
+            trailCtx.fillStyle = 'rgba(50, 30, 15, 0.25)';
             trailCtx.fillRect(0, 0, laneLeft, h);
             trailCtx.fillRect(laneRight, 0, w - laneRight, h);
 
-            // 犯规线
-            trailCtx.strokeStyle = 'rgba(255, 80, 60, 0.5)';
-            trailCtx.lineWidth = 2;
-            trailCtx.setLineDash([8, 4]);
-            trailCtx.beginPath();
-            trailCtx.moveTo(laneLeft, foulY);
-            trailCtx.lineTo(laneRight, foulY);
-            trailCtx.stroke();
-            trailCtx.setLineDash([]);
-            trailCtx.fillStyle = 'rgba(255, 80, 60, 0.7)';
-            trailCtx.font = '10px sans-serif';
-            trailCtx.fillText('犯规线', laneRight + 4, foulY + 4);
-
-            // 箭头标记
-            trailCtx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
-            trailCtx.lineWidth = 1;
-            trailCtx.setLineDash([4, 4]);
-            trailCtx.beginPath();
-            trailCtx.moveTo(laneLeft, arrowY);
-            trailCtx.lineTo(laneRight, arrowY);
-            trailCtx.stroke();
-            trailCtx.setLineDash([]);
-            trailCtx.fillStyle = 'rgba(200, 200, 200, 0.5)';
-            trailCtx.fillText('箭头', laneRight + 4, arrowY + 4);
-
-            // 球瓶区
-            trailCtx.strokeStyle = 'rgba(255, 255, 100, 0.4)';
-            trailCtx.lineWidth = 1.5;
-            trailCtx.setLineDash([3, 5]);
-            trailCtx.beginPath();
-            trailCtx.moveTo(laneLeft, pinY);
-            trailCtx.lineTo(laneRight, pinY);
-            trailCtx.stroke();
-            trailCtx.setLineDash([]);
-            trailCtx.fillStyle = 'rgba(255, 255, 100, 0.5)';
-            trailCtx.fillText('球瓶区', laneRight + 4, pinY + 4);
-
             // 中心线
-            trailCtx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+            trailCtx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
             trailCtx.lineWidth = 1;
             trailCtx.setLineDash([2, 8]);
             trailCtx.beginPath();
@@ -787,13 +809,100 @@
             trailCtx.stroke();
             trailCtx.setLineDash([]);
 
-            // 板数标记
-            trailCtx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            // 犯规线 (粗实线)
+            trailCtx.strokeStyle = 'rgba(255, 80, 60, 0.7)';
+            trailCtx.lineWidth = 3;
+            trailCtx.setLineDash([]);
+            trailCtx.beginPath();
+            trailCtx.moveTo(laneLeft, foulY);
+            trailCtx.lineTo(laneRight, foulY);
+            trailCtx.stroke();
+            // 标签
+            trailCtx.fillStyle = '#f85149';
+            trailCtx.font = 'bold 11px sans-serif';
+            trailCtx.textAlign = 'right';
+            trailCtx.fillText('犯规线', laneLeft - 6, foulY + 4);
+
+            // 球瓶区 (点线)
+            trailCtx.strokeStyle = 'rgba(255, 220, 80, 0.6)';
+            trailCtx.lineWidth = 2;
+            trailCtx.setLineDash([3, 5]);
+            trailCtx.beginPath();
+            trailCtx.moveTo(laneLeft, pinY);
+            trailCtx.lineTo(laneRight, pinY);
+            trailCtx.stroke();
+            trailCtx.setLineDash([]);
+            trailCtx.fillStyle = '#d2991d';
+            trailCtx.textAlign = 'right';
+            trailCtx.fillText('球瓶区', laneLeft - 6, pinY + 4);
+
+            // 箭头标记
+            trailCtx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+            trailCtx.lineWidth = 1;
+            trailCtx.setLineDash([4, 6]);
+            trailCtx.beginPath();
+            trailCtx.moveTo(laneLeft, arrowY);
+            trailCtx.lineTo(laneRight, arrowY);
+            trailCtx.stroke();
+            trailCtx.setLineDash([]);
+            trailCtx.fillStyle = 'rgba(200,200,200,0.5)';
+            trailCtx.fillText('箭头', laneLeft - 6, arrowY + 4);
+
+            // ===== 距离刻度尺 (右侧) =====
+            const tickX = laneRight + 12;
+            for (let ft = 0; ft <= 60; ft += 10) {
+                const y = (ft / 60) * h;
+                const tickLen = ft % 15 === 0 ? 14 : 7;
+                trailCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+                trailCtx.lineWidth = 1;
+                trailCtx.setLineDash([]);
+                trailCtx.beginPath();
+                trailCtx.moveTo(tickX, y);
+                trailCtx.lineTo(tickX + tickLen, y);
+                trailCtx.stroke();
+                trailCtx.fillStyle = 'rgba(255,255,255,0.4)';
+                trailCtx.font = '9px monospace';
+                trailCtx.textAlign = 'left';
+                trailCtx.fillText(`${ft}ft`, tickX + 18, y + 4);
+            }
+
+            // ===== 板数标记 (底部) =====
+            trailCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
             trailCtx.font = '9px monospace';
+            trailCtx.textAlign = 'center';
             for (let board = 0; board <= 40; board += 5) {
                 const x = laneLeft + (laneRight - laneLeft) * (board / 40);
-                trailCtx.fillText(board, x - 8, h - 4);
+                trailCtx.fillText(board, x, h - 6);
             }
+
+            // ===== 方向箭头 (球瓶区附近) =====
+            const arrowCenterX = laneLeft + (laneRight - laneLeft) * 0.5;
+            const arrowBaseY = pinY + 35;
+            // 画箭头指向球瓶
+            trailCtx.fillStyle = 'rgba(255,220,80,0.7)';
+            trailCtx.beginPath();
+            trailCtx.moveTo(arrowCenterX, arrowBaseY - 18);
+            trailCtx.lineTo(arrowCenterX - 8, arrowBaseY + 2);
+            trailCtx.lineTo(arrowCenterX + 8, arrowBaseY + 2);
+            trailCtx.closePath();
+            trailCtx.fill();
+            trailCtx.fillStyle = 'rgba(255,220,80,0.9)';
+            trailCtx.font = 'bold 10px sans-serif';
+            trailCtx.textAlign = 'center';
+            trailCtx.fillText('▲ 球瓶', arrowCenterX, arrowBaseY + 16);
+
+            // ===== 图例 =====
+            const legendX = 8, legendY = 12;
+            trailCtx.fillStyle = 'rgba(0,0,0,0.5)';
+            trailCtx.fillRect(legendX - 2, legendY - 2, 105, 55);
+            trailCtx.fillStyle = 'rgba(200,200,200,0.8)';
+            trailCtx.font = '9px sans-serif';
+            trailCtx.textAlign = 'left';
+            const dirText = ballDirection === 0 ? '方向: 检测中...'
+                : ballDirection < 0 ? '方向: ↑ 向球瓶区' : '方向: ↓ 向球瓶区';
+            trailCtx.fillText('球道俯视图', legendX + 2, legendY + 12);
+            trailCtx.fillText(dirText, legendX + 2, legendY + 26);
+            trailCtx.fillText('0ft=犯规线 60ft=球瓶', legendX + 2, legendY + 40);
         }
 
         // ==================== 更新数据面板 ====================
@@ -831,7 +940,7 @@
             }
 
             foulSpeedEl.textContent = foulLineSpeed > 0 ? foulLineSpeed.toFixed(1) : '--';
-            ballRPMEl.textContent = '--'; // 需要额外视觉特征才能计算
+            updateBallRPM();
             breakPointEl.textContent = breakPointDist > 0 ? breakPointDist.toFixed(0) : '--';
             entryAngleEl.textContent = entryAngle || '--';
 
@@ -839,6 +948,94 @@
                 const elapsed = ((performance.now() - trackingStartTime) / 1000).toFixed(2);
                 elapsedTimeEl.textContent = elapsed;
             }
+        }
+
+        // ==================== 转速计算 ====================
+        function extractBallROI(videoEl, result) {
+            // 在球周围提取ROI用于转速分析
+            if (!diffCanvas) {
+                diffCanvas = document.createElement('canvas');
+                diffCtx = diffCanvas.getContext('2d');
+            }
+            const size = RPM_ROI_SIZE;
+            const x = Math.max(0, Math.floor(result.x - size / 2));
+            const y = Math.max(0, Math.floor(result.y - size / 2));
+            const w = Math.min(videoEl.videoWidth - x, size);
+            const h = Math.min(videoEl.videoHeight - y, size);
+            if (w < 10 || h < 10) return null;
+
+            diffCanvas.width = w;
+            diffCanvas.height = h;
+            diffCtx.drawImage(videoEl, x, y, w, h, 0, 0, w, h);
+            const imgData = diffCtx.getImageData(0, 0, w, h);
+            const gray = new Float32Array(w * h);
+            for (let i = 0; i < w * h; i++) {
+                gray[i] = (imgData.data[i * 4] + imgData.data[i * 4 + 1] + imgData.data[i * 4 + 2]) / 3;
+            }
+            return { gray, w, h, cx: result.x - x, cy: result.y - y };
+        }
+
+        function computeCorrelation(roi1, roi2, angleOffset) {
+            // 计算将roi2旋转angleOffset度后与roi1的相关性
+            const { gray: g1, w, h, cx, cy } = roi1;
+            const { gray: g2 } = roi2;
+            const rad = angleOffset * Math.PI / 180;
+            const cos = Math.cos(rad), sin = Math.sin(rad);
+            let sum = 0, count = 0;
+            const sampleStep = 3;
+
+            for (let y = 0; y < h; y += sampleStep) {
+                for (let x = 0; x < w; x += sampleStep) {
+                    // 将roi2坐标绕中心旋转后采样
+                    const rx = cx + (x - cx) * cos - (y - cy) * sin;
+                    const ry = cy + (x - cx) * sin + (y - cy) * cos;
+                    const ix = Math.round(rx), iy = Math.round(ry);
+                    if (ix >= 0 && ix < w && iy >= 0 && iy < h) {
+                        sum += Math.abs(g2[iy * w + ix] - g1[y * w + x]);
+                        count++;
+                    }
+                }
+            }
+            return count > 0 ? sum / count : Infinity;
+        }
+
+        function updateBallRPM() {
+            // 显示最近计算的转速
+            if (rpmWindow.length > 0) {
+                ballRPM = rpmWindow.reduce((a, b) => a + b, 0) / rpmWindow.length;
+                ballRPMEl.textContent = ballRPM.toFixed(0);
+            } else {
+                ballRPMEl.textContent = ballRPM > 0 ? ballRPM.toFixed(0) : '--';
+            }
+        }
+
+        function computeFrameRPM(result, videoEl) {
+            // 帧间ROI相关找旋转角度
+            if (!prevBallROI || !prevBallCenter) {
+                prevBallROI = extractBallROI(videoEl, result);
+                prevBallCenter = { x: result.x, y: result.y };
+                return;
+            }
+
+            const currROI = extractBallROI(videoEl, result);
+            if (!currROI) return;
+
+            // 尝试不同旋转角度，找最佳匹配
+            let bestAngle = 0, bestCost = Infinity;
+            const maxAngle = 15; // 每帧最多旋转15度
+            for (let a = -maxAngle; a <= maxAngle; a += 3) {
+                const cost = computeCorrelation(prevBallROI, currROI, a);
+                if (cost < bestCost) { bestCost = cost; bestAngle = a; }
+            }
+
+            // 转换为RPM (假设约30fps处理速率)
+            const rpm = Math.abs(bestAngle) * 30 * 60 / 360;
+            rpmWindow.push(rpm);
+            if (rpmWindow.length > 8) rpmWindow.shift();
+            ballRPM = rpmWindow.reduce((a, b) => a + b, 0) / rpmWindow.length;
+
+            prevBallROI = currROI;
+            prevBallCenter = { x: result.x, y: result.y };
         }
 
         // ==================== 状态显示 ====================
@@ -1119,8 +1316,13 @@
                 ballMissCount = 0;
                 addTrailPoint(result.x, result.y);
                 lastDetectionTime = performance.now();
+                // 每3帧算一次转速 (降低计算负载)
+                if (trailPoints.length % 3 === 0) {
+                    computeFrameRPM(result, videoEl);
+                }
                 drawDetectionOverlay(result);
-                setStatus(`检测中 (置信度: ${(result.confidence * 100).toFixed(0)}%)`, 'green');
+                const dirTag = ballDirection === 0 ? '' : ballDirection < 0 ? ' ↑向球瓶' : ' ↓向球瓶';
+                setStatus(`检测中 (置信度: ${(result.confidence * 100).toFixed(0)}%)${dirTag}`, 'green');
             } else {
                 ballMissCount++;
                 if (ballMissCount > 30) {
@@ -1159,7 +1361,8 @@
         }
 
         // ==================== 摄像头 ====================
-        async function startCamera() {
+        async function startCamera(facingMode) {
+            const fm = facingMode || currentFacingMode;
             setStatus('启动摄像头...', 'yellow');
             // 先停掉之前的摄像头
             if (camera) {
@@ -1167,17 +1370,16 @@
                 camera = null;
             }
             try {
-                // 优先尝试默认摄像头，不要 exact 约束
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'user' },
+                    video: { facingMode: fm },
                     audio: false
                 });
                 camera = stream;
+                currentFacingMode = fm;
                 video.srcObject = stream;
                 await video.play();
                 isVideoFileMode = false;
 
-                // 等视频元数据就绪后再设置 canvas
                 await new Promise(resolve => {
                     if (video.videoWidth > 0) { resolve(); return; }
                     video.addEventListener('loadedmetadata', resolve, { once: true });
@@ -1186,12 +1388,18 @@
                 detectOverlay.width = video.videoWidth;
                 detectOverlay.height = video.videoHeight;
 
-                setStatus('摄像头就绪', 'green');
+                setStatus(`摄像头就绪 (${fm === 'environment' ? '后置' : '前置'})`, 'green');
+                document.getElementById('switchCameraBtn').style.display = 'inline-block';
                 startDetectionLoop();
             } catch (err) {
                 console.error('摄像头启动失败:', err);
-                setStatus('摄像头错误: ' + err.message + ' (请确保已授权摄像头权限)', 'red');
+                setStatus('摄像头错误: ' + err.message, 'red');
             }
+        }
+
+        function switchCamera() {
+            const newFacing = currentFacingMode === 'user' ? 'environment' : 'user';
+            startCamera(newFacing);
         }
 
         let detectionLoopRunning = false;
@@ -1374,6 +1582,35 @@
 
         document.getElementById('cameraBtn').addEventListener('click', () => {
             startCamera();
+        });
+
+        document.getElementById('switchCameraBtn').addEventListener('click', () => {
+            switchCamera();
+        });
+
+        // ===== 轨迹旋转 =====
+        function setTrailRotation(degrees) {
+            trailRotation = ((degrees % 360) + 360) % 360;
+            document.getElementById('rotateAngle').textContent =
+                trailRotation !== 0 ? `${trailRotation.toFixed(0)}°` : '';
+            drawTrail();
+        }
+
+        // 点击按钮旋转90°
+        document.getElementById('rotateTrailBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            setTrailRotation(trailRotation + 90);
+        });
+
+        // 滚轮旋转
+        trailCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            setTrailRotation(trailRotation + e.deltaY * 0.3);
+        });
+
+        // 双击重置旋转
+        trailCanvas.addEventListener('dblclick', () => {
+            setTrailRotation(0);
         });
 
         document.getElementById('videoFileInput').addEventListener('change', (e) => {
