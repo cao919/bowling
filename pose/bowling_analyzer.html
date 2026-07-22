@@ -321,6 +321,7 @@
     <div class="toolbar">
         <label for="modeSelect">检测模式:</label>
         <select id="modeSelect">
+            <option value="diff">帧差分追踪</option>
             <option value="ai">AI 检测 (COCO-SSD)</option>
             <option value="ai_color">AI + 颜色过滤</option>
             <option value="color">颜色分割</option>
@@ -332,6 +333,9 @@
             <option value="manual">手动标定</option>
         </select>
 
+        <button id="loadVideoBtn" class="accent">加载视频</button>
+        <input type="file" id="videoFileInput" accept="video/*" style="display:none;">
+        <button id="cameraBtn" class="accent">启动摄像头</button>
         <button id="extractBtn" class="primary">提取轨迹</button>
         <button id="playbackBtn" class="accent">轨迹回放</button>
         <button id="resetBtn" class="danger">重置 (R)</button>
@@ -445,7 +449,7 @@
 
         // ==================== 状态变量 ====================
         let trailPoints = [];        // 轨迹点: {x, y, t, rawX, rawY}
-        let currentMode = 'ai';
+        let currentMode = 'diff';
         let cocoDetector = null;
         let camera = null;
         let isTracking = false;
@@ -465,11 +469,22 @@
         let minConfidence = 0.35;
         let maxPoints = 150;
 
-        // 播放回放
+        // 视频文件模式
+        let isVideoFileMode = false;
+        let videoFileURL = null;
+
+        // 回放
         let isPlaybackMode = false;
         let playbackIndex = 0;
         let playbackTimer = null;
         let savedTrail = [];
+
+        // ===== 帧差分追踪状态 =====
+        let prevFrameGray = null;    // 上一帧灰度图数据
+        let diffCanvas = null;       // 离屏canvas用于帧差分
+        let diffCtx = null;
+        let prevBallPos = null;      // 上一帧球位置 (用于连续性)
+        let allTrajectories = [];    // 所有候选轨迹
 
         // 球道标定 (手动四个角点归一化坐标)
         let laneCorners = null; // [{x,y}, {x,y}, {x,y}, {x,y}] 左上、右上、右下、左下
@@ -550,6 +565,8 @@
             breakPointDist = 0;
             entryAngle = 0;
             ballMissCount = 0;
+            prevFrameGray = null;
+            prevBallPos = null;
             stopPlayback();
             drawTrail();
             updateDataPanel();
@@ -941,39 +958,174 @@
             return null;
         }
 
+        // ==================== 帧差分追踪 (纯JS/Canvas) ====================
+        // 降采样到小尺寸以加速处理
+        const DIFF_SCALE = 0.2;
+
+        function getGrayFromVideo(videoEl) {
+            const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+            if (vw <= 0 || vh <= 0) return null;
+
+            if (!diffCanvas) {
+                diffCanvas = document.createElement('canvas');
+                diffCtx = diffCanvas.getContext('2d');
+            }
+            const sw = Math.max(1, Math.floor(vw * DIFF_SCALE));
+            const sh = Math.max(1, Math.floor(vh * DIFF_SCALE));
+            diffCanvas.width = sw;
+            diffCanvas.height = sh;
+            diffCtx.drawImage(videoEl, 0, 0, vw, vh, 0, 0, sw, sh);
+
+            const imgData = diffCtx.getImageData(0, 0, sw, sh);
+            const px = imgData.data;
+            const gray = new Uint8Array(sw * sh);
+            for (let i = 0; i < sw * sh; i++) {
+                gray[i] = (px[i*4] + px[i*4+1] + px[i*4+2]) / 3 | 0;
+            }
+            return { gray, w: sw, h: sh, scale: DIFF_SCALE };
+        }
+
+        function findBlobsSimple(prevGray, currGray, w, h, roiTop) {
+            // 计算差分并二值化
+            const mask = new Uint8Array(w * h);
+            let activeCount = 0;
+            const th = 15;
+
+            for (let y = roiTop; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i = y * w + x;
+                    const d = Math.abs(currGray[i] - prevGray[i]);
+                    if (d > th) { mask[i] = 1; activeCount++; }
+                }
+            }
+
+            if (activeCount < 20) return [];
+
+            // 简单连通域: 找面积>=20的区域, 质心
+            const visited = new Uint8Array(w * h);
+            const blobs = [];
+
+            for (let y = roiTop; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = y * w + x;
+                    if (!mask[idx] || visited[idx]) continue;
+
+                    // BFS (限制最大迭代防止卡死)
+                    const stack = [[x, y]];
+                    visited[idx] = 1;
+                    let sx = 0, sy = 0, area = 0;
+                    let maxIter = 3000;
+
+                    while (stack.length > 0 && maxIter-- > 0) {
+                        const [cx, cy] = stack.pop();
+                        sx += cx; sy += cy; area++;
+
+                        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+                            const nx = cx + dx, ny = cy + dy;
+                            if (nx >= 0 && nx < w && ny >= roiTop && ny < h) {
+                                const ni = ny * w + nx;
+                                if (mask[ni] && !visited[ni]) {
+                                    visited[ni] = 1;
+                                    stack.push([nx, ny]);
+                                }
+                            }
+                        }
+                    }
+
+                    if (area >= 15 && area <= 3000) {
+                        blobs.push({ cx: sx / area, cy: sy / area, area });
+                    }
+                }
+            }
+            return blobs;
+        }
+
+        let diffFrameSkip = 0;
+
+        function detectByFrameDiff(videoEl) {
+            // 每2帧处理一次，降低CPU负载
+            diffFrameSkip = (diffFrameSkip + 1) % 2;
+            if (diffFrameSkip !== 0) return null;
+
+            const grayData = getGrayFromVideo(videoEl);
+            if (!grayData) return null;
+
+            const { gray, w, h, scale } = grayData;
+
+            if (!prevFrameGray) {
+                prevFrameGray = gray;
+                return null;
+            }
+
+            const roiTop = Math.floor(h * 0.05);
+            const blobs = findBlobsSimple(prevFrameGray, gray, w, h, roiTop);
+            prevFrameGray = gray;
+
+            if (blobs.length === 0) return null;
+
+            // 选最靠近上一帧位置的 blob
+            let best = null, bestDist = Infinity;
+            const maxJump = w * 0.3;
+
+            for (const b of blobs) {
+                let dist = 0;
+                if (prevBallPos) {
+                    dist = Math.hypot(b.cx - prevBallPos.x, b.cy - prevBallPos.y);
+                    if (dist > maxJump) continue;
+                }
+                // 优先选择面积适中、位置靠下的 blob
+                const score = (1 - dist / maxJump) * 0.6 + Math.min(1, b.area / 200) * 0.2 + (b.cy / h) * 0.2;
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = {
+                        x: b.cx / scale,
+                        y: b.cy / scale,
+                        confidence: Math.min(1, Math.max(0.3, score)),
+                        width: Math.sqrt(b.area) / scale,
+                        height: Math.sqrt(b.area) / scale
+                    };
+                }
+            }
+
+            if (best) {
+                prevBallPos = { x: best.x * scale, y: best.y * scale };
+            }
+            return best;
+        }
+
         // ==================== 主检测循环 ====================
         async function detectFrame(videoEl) {
             if (!isTracking || isPlaybackMode) return;
 
             let result = null;
 
-            switch (currentMode) {
-                case 'ai':
-                    result = await detectByAI(videoEl);
-                    break;
-                case 'ai_color':
-                    result = await detectByAIColor(videoEl);
-                    break;
-                case 'color':
-                    result = detectByColor(videoEl);
-                    break;
+            if (currentMode === 'diff') {
+                result = detectByFrameDiff(videoEl);
+            } else {
+                switch (currentMode) {
+                    case 'ai':
+                        result = await detectByAI(videoEl);
+                        break;
+                    case 'ai_color':
+                        result = await detectByAIColor(videoEl);
+                        break;
+                    case 'color':
+                        result = detectByColor(videoEl);
+                        break;
+                }
             }
 
             if (result) {
                 ballMissCount = 0;
                 addTrailPoint(result.x, result.y);
                 lastDetectionTime = performance.now();
-
-                // 在视频上绘制检测框
                 drawDetectionOverlay(result);
-
                 setStatus(`检测中 (置信度: ${(result.confidence * 100).toFixed(0)}%)`, 'green');
             } else {
                 ballMissCount++;
                 if (ballMissCount > 30) {
                     setStatus('未检测到球体', 'yellow');
                 }
-                // 清除检测覆盖层
                 detectCtx.clearRect(0, 0, detectOverlay.width, detectOverlay.height);
             }
         }
@@ -1009,15 +1161,28 @@
         // ==================== 摄像头 ====================
         async function startCamera() {
             setStatus('启动摄像头...', 'yellow');
+            // 先停掉之前的摄像头
+            if (camera) {
+                camera.getTracks().forEach(t => t.stop());
+                camera = null;
+            }
             try {
+                // 优先尝试默认摄像头，不要 exact 约束
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480, facingMode: 'environment' },
+                    video: { facingMode: 'user' },
                     audio: false
                 });
+                camera = stream;
                 video.srcObject = stream;
                 await video.play();
+                isVideoFileMode = false;
 
-                // 设置检测覆盖层尺寸
+                // 等视频元数据就绪后再设置 canvas
+                await new Promise(resolve => {
+                    if (video.videoWidth > 0) { resolve(); return; }
+                    video.addEventListener('loadedmetadata', resolve, { once: true });
+                });
+
                 detectOverlay.width = video.videoWidth;
                 detectOverlay.height = video.videoHeight;
 
@@ -1025,18 +1190,31 @@
                 startDetectionLoop();
             } catch (err) {
                 console.error('摄像头启动失败:', err);
-                setStatus('摄像头错误: ' + err.message, 'red');
+                setStatus('摄像头错误: ' + err.message + ' (请确保已授权摄像头权限)', 'red');
             }
         }
 
+        let detectionLoopRunning = false;
+        let frameDebugCount = 0;
+
         function startDetectionLoop() {
+            if (detectionLoopRunning) return;
+            detectionLoopRunning = true;
+            frameDebugCount = 0;
             const loop = async () => {
+                if (!detectionLoopRunning) return;
                 if (video.readyState >= 2) {
+                    frameDebugCount++;
+                    // 每60帧输出一次调试信息
+                    if (frameDebugCount % 60 === 0) {
+                        console.log(`[检测] 已处理${frameDebugCount}帧, isTracking=${isTracking}, 轨迹点数=${trailPoints.length}`);
+                    }
                     await detectFrame(video);
                 }
                 requestAnimationFrame(loop);
             };
             requestAnimationFrame(loop);
+            console.log('[检测] 循环已启动');
         }
 
         // ==================== 轨迹回放 ====================
@@ -1153,8 +1331,69 @@
             }
         });
 
+        // ==================== 视频文件加载 ====================
+        function loadVideoFile(file) {
+            // 清理旧资源
+            if (videoFileURL) {
+                URL.revokeObjectURL(videoFileURL);
+                videoFileURL = null;
+            }
+            if (camera) {
+                // 停止摄像头流
+                camera.getTracks().forEach(t => t.stop());
+                camera = null;
+            }
+
+            videoFileURL = URL.createObjectURL(file);
+            video.srcObject = null;
+            video.src = videoFileURL;
+            video.loop = false;
+            video.muted = false;
+            isVideoFileMode = true;
+
+            resetTrail();
+            setStatus('视频已加载: ' + file.name, 'green');
+
+            video.onloadedmetadata = () => {
+                detectOverlay.width = video.videoWidth;
+                detectOverlay.height = video.videoHeight;
+            };
+
+            video.onended = () => {
+                stopTracking();
+                setStatus('视频播放完毕', 'yellow');
+            };
+
+            // 启动检测循环 (每帧检测，帧差分模式会自动节流)
+            startDetectionLoop();
+        }
+
+        document.getElementById('loadVideoBtn').addEventListener('click', () => {
+            document.getElementById('videoFileInput').click();
+        });
+
+        document.getElementById('cameraBtn').addEventListener('click', () => {
+            startCamera();
+        });
+
+        document.getElementById('videoFileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                loadVideoFile(file);
+            }
+        });
+
         document.getElementById('extractBtn').addEventListener('click', () => {
+            if (isVideoFileMode) {
+                video.currentTime = 0;
+            }
             startTracking();
+            if (isVideoFileMode) {
+                video.play().catch(err => {
+                    console.error('视频播放失败:', err);
+                    setStatus('视频播放失败: ' + err.message, 'red');
+                });
+            }
         });
 
         document.getElementById('playbackBtn').addEventListener('click', () => {
@@ -1211,8 +1450,10 @@
                     e.preventDefault();
                     if (isTracking) {
                         stopTracking();
+                        if (isVideoFileMode) video.pause();
                     } else {
                         startTracking();
+                        if (isVideoFileMode) video.play().catch(err => console.error(err));
                     }
                     break;
                 case 'p':
@@ -1236,8 +1477,13 @@
         // ==================== 启动 ====================
         window.onload = async () => {
             drawTrail();
-            await loadModel();
-            await startCamera();
+            // 帧差分模式不需要AI模型，直接可用
+            if (currentMode === 'diff') {
+                setStatus('模式: 帧差分追踪 | 加载视频或启动摄像头后点击"提取轨迹"', 'green');
+            } else {
+                await loadModel();
+                setStatus('模型就绪 | 加载视频或启动摄像头', 'green');
+            }
         };
     </script>
 </body>
