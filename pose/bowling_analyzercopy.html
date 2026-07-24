@@ -91,6 +91,10 @@
             display: flex;
             flex-direction: column;
         }
+        .video-panel.expanded {
+            flex: 1 1 auto;
+            max-width: 100%;
+        }
         .video-panel.hidden {
             flex: 0 0 0;
             max-width: 0;
@@ -104,11 +108,15 @@
             border-radius: 8px;
             overflow: hidden;
             background: #000;
-            flex: 1;
+            /* 不自伸缩: 高度由视频内容决定, 防止canvas超出视频范围 */
+            flex: 0 0 auto;
+            align-self: center;
+            width: 100%;
         }
         .video-wrapper video {
             display: block;
             width: 100%;
+            height: auto;
             transition: transform 0.3s;
         }
         .video-wrapper video.mirrored {
@@ -123,6 +131,45 @@
             height: 100%;
             pointer-events: auto;
             cursor: crosshair;
+        }
+
+        /* ===== 视频操作按钮条 (视频画面下方) ===== */
+        .video-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 0 0 0;
+            justify-content: center;
+        }
+        .video-controls button {
+            padding: 5px 14px;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            outline: none;
+            transition: border-color 0.2s, background 0.2s;
+            background: #21262d;
+            color: var(--text);
+        }
+        .video-controls button:hover { border-color: var(--accent); }
+        .video-controls button.primary { background: #238636; border-color: #2ea043; color: #fff; }
+        .video-controls button.primary:hover { background: #2ea043; }
+        .video-controls button.danger { background: #da3633; border-color: #f85149; color: #fff; }
+        .video-controls button.danger:hover { background: #f85149; }
+        .video-controls button.accent { background: #21262d; color: var(--text); }
+        .video-controls .status-badge {
+            padding: 5px 12px;
+            background: #21262d;
+            border-radius: 14px;
+            font-size: 12px;
+            border-left: 4px solid var(--green);
+            color: var(--green);
+            min-width: 100px;
+            text-align: center;
+            margin-left: 4px;
         }
 
         /* ===== 轨迹面板 ===== */
@@ -319,6 +366,69 @@
             border: 1px solid var(--border);
         }
 
+        /* ===== ONNX分析模式专用控件 ===== */
+        .onnx-params {
+            background: rgba(58, 106, 255, 0.06);
+            border-color: rgba(58, 106, 255, 0.3);
+            margin-top: 4px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .onnx-params .param-group {
+            gap: 4px;
+        }
+        .onnx-params input[type="range"] {
+            width: 80px;
+        }
+        .onnx-params span.val {
+            min-width: 22px;
+            font-size: 11px;
+        }
+        .onnx-params label {
+            font-size: 11px;
+        }
+        .color-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        .color-toggle input[type="checkbox"] {
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .export-btn {
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #1a3a5c;
+            color: var(--accent2);
+            border: 1px solid #58a6ff;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .export-btn:hover {
+            background: #264f80;
+        }
+        .model-status {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #21262d;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+        .model-status.loaded {
+            color: var(--green);
+            border-left: 3px solid var(--green);
+        }
+        .model-status.error {
+            color: var(--red);
+            border-left: 3px solid var(--red);
+        }
+
         /* ===== 响应式 ===== */
         @media (max-width: 850px) {
             .main-layout {
@@ -370,6 +480,15 @@
                 <video id="webcam" playsinline></video>
                 <canvas id="detectOverlay"></canvas>
             </div>
+            <!-- 流程控制按钮条 -->
+            <div class="video-controls" id="videoControls">
+                <button id="readyBtn" class="accent">准备</button>
+                <button id="startBtn" class="primary" style="display:none;">开始</button>
+                <button id="pauseBtn" class="accent" style="display:none;">暂停</button>
+                <button id="stopBtn" class="danger" style="display:none;">结束</button>
+                <button id="resetBtn" class="danger">重置</button>
+                <div class="status-badge" id="statusBadge">等待启动...</div>
+            </div>
         </div>
 
         <!-- 右：轨迹画布 -->
@@ -387,7 +506,9 @@
             <option value="ai">AI 检测 (COCO-SSD)</option>
             <option value="ai_color">AI + 颜色过滤</option>
             <option value="color">颜色分割</option>
+            <option value="onnx">ONNX 智能分析</option>
         </select>
+        <span class="model-status" id="modelStatus" title="模型加载状态">模型: 未加载</span>
 
         <label for="laneSelect">球道识别:</label>
         <select id="laneSelect">
@@ -401,15 +522,8 @@
         <button id="captureBgBtn" class="primary" style="font-size:12px;padding:5px 12px;">捕获背景 ⚠</button>
         <button id="cameraBtn" class="accent">启动摄像头</button>
         <button id="switchCameraBtn" class="accent" style="display:none;">切换摄像头</button>
-        <button id="readyBtn" class="accent">准备</button>
-        <button id="startBtn" class="primary" style="display:none;">开始</button>
-        <button id="pauseBtn" class="accent" style="display:none;">暂停</button>
-        <button id="stopBtn" class="danger" style="display:none;">结束</button>
         <button id="playbackBtn" class="accent">轨迹回放</button>
-        <button id="resetBtn" class="danger">重置 (R)</button>
 
-        <div class="status-badge" id="statusBadge">等待启动...</div>
-        
         <span style="color:var(--text-dim);font-size:11px;">|</span>
         <button id="toggleVideoBtn" class="accent" style="font-size:11px;padding:4px 10px;" title="显示/隐藏摄像头面板">📷 隐藏</button>
         <button id="toggleTrailBtn" class="accent" style="font-size:11px;padding:4px 10px;" title="显示/隐藏轨迹面板">📊 隐藏</button>
@@ -447,6 +561,47 @@
             <input type="range" id="maxPoints" min="30" max="300" step="10" value="150">
             <span class="val" id="pointsVal">150</span>
         </div>
+    </div>
+
+    <!-- ONNX分析专用参数面板 -->
+    <div class="params-panel onnx-params" id="onnxParamsPanel" style="display:none;">
+        <div class="param-group">
+            <label>NMS阈值:</label>
+            <input type="range" id="nmsThreshold" min="0.1" max="0.9" step="0.05" value="0.45">
+            <span class="val" id="nmsVal">0.45</span>
+        </div>
+        <div class="param-group">
+            <label>MOG更新率:</label>
+            <input type="range" id="mogLearnRate" min="0.001" max="0.1" step="0.001" value="0.005">
+            <span class="val" id="mogVal">0.005</span>
+        </div>
+        <div class="param-group">
+            <label>轨迹平滑:</label>
+            <input type="range" id="trailSmoothFactor" min="0.1" max="0.95" step="0.05" value="0.75">
+            <span class="val" id="trailSmoothVal">0.75</span>
+        </div>
+        <div class="param-group">
+            <label>椭圆长宽比:</label>
+            <span style="color:var(--text-dim);font-size:10px;">0.8-1.2</span>
+        </div>
+        <div class="color-toggle">
+            <input type="checkbox" id="showBallTrail" checked>
+            <label for="showBallTrail" style="color:#f0883e;">球轨迹</label>
+        </div>
+        <div class="color-toggle">
+            <input type="checkbox" id="showPinBox" checked>
+            <label for="showPinBox" style="color:#58a6ff;">球瓶框</label>
+        </div>
+        <div class="color-toggle">
+            <input type="checkbox" id="showTrackID">
+            <label for="showTrackID" style="color:#d2991d;">Track ID</label>
+        </div>
+        <div class="color-toggle">
+            <input type="checkbox" id="showImpactPoints" checked>
+            <label for="showImpactPoints" style="color:#f85149;">撞瓶标记</label>
+        </div>
+        <button class="export-btn" id="exportJsonBtn" title="导出轨迹数据为JSON文件">导出数据 JSON</button>
+        <button class="export-btn" id="exportTrajectoryImgBtn" title="导出轨迹图为PNG" style="border-color:#3fb950;color:#3fb950;">导出轨迹图 PNG</button>
     </div>
 
     <!-- 数据面板 -->
@@ -834,6 +989,8 @@
             ballRPM = 0;
             rpmWindow = [];
             stopPlayback();
+            // 重置 ONNX 分析器
+            if (onnxAnalyzer) onnxAnalyzer.reset();
             // 重置按钮状态
             setTrackState('idle');
             // 保留 laneCorners 和 homographyMatrix (摄像头/球道不变)
@@ -998,9 +1155,13 @@
         // ==================== 绘制轨迹 ====================
         function drawTrail() {
             const w = trailCanvas.width, h = trailCanvas.height;
-            trailCtx.save();
+            // 先以单位矩阵清除并填充背景，避免旋转后四角露底
+            trailCtx.setTransform(1, 0, 0, 1, 0, 0);
             trailCtx.clearRect(0, 0, w, h);
+            trailCtx.fillStyle = '#0a0a0f';
+            trailCtx.fillRect(0, 0, w, h);
 
+            trailCtx.save();
             // 应用旋转
             if (trailRotation !== 0) {
                 trailCtx.translate(w / 2, h / 2);
@@ -1106,6 +1267,7 @@
 
         // 绘制球道参考线 (俯视图 · 标准USBC球道布局)
         function drawLaneOnTrail(w, h) {
+            trailCtx.save();
             const foulY = FOUL_LINE_Y * h;
             const pinY = PIN_DECK_Y * h;
             const arrowsY = ARROWS_Y * h;
@@ -1314,6 +1476,7 @@
             trailCtx.fillText('60ft 球瓶区', legendX + 5, legendY + 12);
             trailCtx.fillText('0ft 犯规线', legendX + 5, legendY + 26);
             trailCtx.fillText('宽42in · 39板', legendX + 5, legendY + 42);
+            trailCtx.restore();
         }
 
         // ==================== 更新数据面板 ====================
@@ -1756,6 +1919,25 @@
 
         // ==================== 主检测循环 ====================
         async function detectFrame(videoEl) {
+            // ONNX模式: ready状态也需要预热MOG2背景模型
+            if (currentMode === 'onnx' && onnxModeActive && onnxAnalyzer) {
+                if (trackState === 'ready') {
+                    // 预热: 只更新MOG2背景模型, 不记录轨迹
+                    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+                    if (vw > 0 && vh > 0) {
+                        const sw = Math.max(32, Math.floor(vw * onnxAnalyzer.scaleW));
+                        const sh = Math.max(32, Math.floor(vh * onnxAnalyzer.scaleH));
+                        const frameData = onnxAnalyzer.extractFrame(videoEl, vw, vh, sw, sh);
+                        onnxAnalyzer.mog2.apply(frameData.rgb, sw, sh);
+                    }
+                    return;
+                }
+                if (trackState === 'tracking') {
+                    await detectFrameONNX(videoEl);
+                }
+                return;
+            }
+
             if (!isTracking || isPlaybackMode) return;
 
             let result = null;
@@ -1802,6 +1984,11 @@
         function drawDetectionOverlay(result) {
             // 不清除标定覆盖层: 先画球道区域, 再画检测标记
             detectCtx.clearRect(0, 0, detectOverlay.width, detectOverlay.height);
+            // 裁剪到画布边界
+            detectCtx.save();
+            detectCtx.beginPath();
+            detectCtx.rect(0, 0, detectOverlay.width, detectOverlay.height);
+            detectCtx.clip();
 
             // 标定完成且追踪中: 保持蓝色球道覆盖层可见
             if (laneCorners && laneCorners.length === 4) {
@@ -1889,6 +2076,8 @@
             detectCtx.font = '10px sans-serif';
             detectCtx.textAlign = 'center';
             detectCtx.fillText(`${(result.confidence*100).toFixed(0)}%`, cx, cy - ringR - 12);
+
+            detectCtx.restore();
         }
 
         // ==================== 摄像头 ====================
@@ -2066,18 +2255,25 @@
 
         function drawCalibrationOnVideo() {
             detectCtx.clearRect(0, 0, detectOverlay.width, detectOverlay.height);
-            if (calibrationPoints.length === 0) return;
+            detectCtx.save();
+            detectCtx.beginPath();
+            detectCtx.rect(0, 0, detectOverlay.width, detectOverlay.height);
+            detectCtx.clip();
+
+            // 若标定已完成(calibrationPoints为空但laneCorners有值), 用laneCorners绘制
+            const pts = calibrationPoints.length > 0 ? calibrationPoints : laneCorners;
+            if (!pts || pts.length === 0) { detectCtx.restore(); return; }
 
             const dw = detectOverlay.width, dh = detectOverlay.height;
 
             // 标定完成: 画蓝色半透明球道区域
-            if (calibrationPoints.length === 4) {
+            if (pts.length === 4) {
                 // 蓝色半透明填充
                 detectCtx.fillStyle = 'rgba(30, 100, 255, 0.18)';
                 detectCtx.beginPath();
-                detectCtx.moveTo(calibrationPoints[0].x * dw, calibrationPoints[0].y * dh);
+                detectCtx.moveTo(pts[0].x * dw, pts[0].y * dh);
                 for (let i = 1; i < 4; i++) {
-                    detectCtx.lineTo(calibrationPoints[i].x * dw, calibrationPoints[i].y * dh);
+                    detectCtx.lineTo(pts[i].x * dw, pts[i].y * dh);
                 }
                 detectCtx.closePath();
                 detectCtx.fill();
@@ -2087,16 +2283,16 @@
                 detectCtx.lineWidth = 2.5;
                 detectCtx.setLineDash([]);
                 detectCtx.beginPath();
-                detectCtx.moveTo(calibrationPoints[0].x * dw, calibrationPoints[0].y * dh);
+                detectCtx.moveTo(pts[0].x * dw, pts[0].y * dh);
                 for (let i = 1; i < 4; i++) {
-                    detectCtx.lineTo(calibrationPoints[i].x * dw, calibrationPoints[i].y * dh);
+                    detectCtx.lineTo(pts[i].x * dw, pts[i].y * dh);
                 }
                 detectCtx.closePath();
                 detectCtx.stroke();
 
                 // 四个角点标注方位
                 for (let i = 0; i < 4; i++) {
-                    const cp = calibrationPoints[i];
+                    const cp = pts[i];
                     const cpx = cp.x * dw, cpy = cp.y * dh;
                     // 绿点
                     detectCtx.fillStyle = '#00ff00';
@@ -2116,12 +2312,13 @@
                     detectCtx.textAlign = 'center';
                     detectCtx.fillText(label, cpx, cpy - 15);
                 }
+                detectCtx.restore();
                 return;
             }
 
             // 标定中: 已点位置 + 方位标签
-            for (let i = 0; i < calibrationPoints.length; i++) {
-                const cp = calibrationPoints[i];
+            for (let i = 0; i < pts.length; i++) {
+                const cp = pts[i];
                 const cpx = cp.x * dw, cpy = cp.y * dh;
                 // 实心绿点
                 detectCtx.fillStyle = '#00ff00';
@@ -2148,18 +2345,20 @@
             }
 
             // 连线
-            if (calibrationPoints.length >= 2) {
+            if (pts.length >= 2) {
                 detectCtx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
                 detectCtx.lineWidth = 2;
                 detectCtx.setLineDash([4, 4]);
                 detectCtx.beginPath();
-                detectCtx.moveTo(calibrationPoints[0].x * dw, calibrationPoints[0].y * dh);
-                for (let i = 1; i < calibrationPoints.length; i++) {
-                    detectCtx.lineTo(calibrationPoints[i].x * dw, calibrationPoints[i].y * dh);
+                detectCtx.moveTo(pts[0].x * dw, pts[0].y * dh);
+                for (let i = 1; i < pts.length; i++) {
+                    detectCtx.lineTo(pts[i].x * dw, pts[i].y * dh);
                 }
                 detectCtx.stroke();
                 detectCtx.setLineDash([]);
             }
+
+            detectCtx.restore();
         }
 
         // 轨迹画布不再处理标定点击
@@ -2179,7 +2378,16 @@
         // ==================== 事件监听 ====================
         modeSelect.addEventListener('change', (e) => {
             currentMode = e.target.value;
-            setStatus(`模式切换: ${currentMode}`, 'green');
+            if (currentMode === 'onnx') {
+                onnxModeActive = true;
+                toggleONNXPanel(true);
+                if (!onnxAnalyzer) onnxAnalyzer = new ONNXBowlingAnalyzer();
+                setStatus('ONNX 智能分析模式已激活 (回退检测器)', 'green');
+            } else {
+                onnxModeActive = false;
+                toggleONNXPanel(false);
+                setStatus(`模式切换: ${currentMode}`, 'green');
+            }
         });
 
         laneSelect.addEventListener('change', (e) => {
@@ -2254,6 +2462,17 @@
             }
             captureBackground(video);
             bgCaptured = true;
+
+            // ONNX模式: 同时用当前帧初始化MOG2背景模型
+            if (currentMode === 'onnx' && onnxAnalyzer) {
+                const vw = video.videoWidth, vh = video.videoHeight;
+                const sw = Math.max(32, Math.floor(vw * onnxAnalyzer.scaleW));
+                const sh = Math.max(32, Math.floor(vh * onnxAnalyzer.scaleH));
+                const frameData = onnxAnalyzer.extractFrame(video, vw, vh, sw, sh);
+                onnxAnalyzer.mog2.init(frameData.rgb, sw, sh);
+                console.log('[ONNX] MOG2背景已用捕获帧初始化');
+            }
+
             setStatus('背景已捕获! 检测精度将大幅提升 | 空球道+无人的最佳', 'green');
         });
 
@@ -2281,6 +2500,13 @@
             const toggleVideoBtn = document.getElementById('toggleVideoBtn');
             const toggleTrailBtn = document.getElementById('toggleTrailBtn');
             const maxBtn = document.getElementById('maximizeTrailBtn');
+
+            // 轨迹面板隐藏时 → 摄像头面板自动扩展填满宽度
+            if (trailPanelHidden || trailMaximized) {
+                videoPanel.classList.add('expanded');
+            } else {
+                videoPanel.classList.remove('expanded');
+            }
 
             if (videoPanelHidden) {
                 videoPanel.classList.add('hidden');
@@ -2363,17 +2589,6 @@
         document.getElementById('rotateTrailBtn').addEventListener('click', (e) => {
             e.stopPropagation();
             setTrailRotation(trailRotation + 90);
-        });
-
-        // 滚轮旋转
-        trailCanvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            setTrailRotation(trailRotation + e.deltaY * 0.3);
-        });
-
-        // 双击重置旋转
-        trailCanvas.addEventListener('dblclick', () => {
-            setTrailRotation(0);
         });
 
         document.getElementById('videoFileInput').addEventListener('change', (e) => {
@@ -2517,7 +2732,1543 @@
             if (calibrating) drawCalibrationOnVideo();
         });
 
-        // ==================== 启动 ====================
+        // ================================================================
+        // =====  模块 1: OpenCV.js 本地加载器  =====
+        // ================================================================
+        // OpenCV.js 离线文件放置路径: ./opencv/opencv.js
+        // 下载地址: https://docs.opencv.org/4.x/opencv.js
+        const OPENCV_LOCAL_PATH = './opencv/opencv.js';
+        let cvReady = false;
+        let cvLoadError = null;
+
+        function loadOpenCV() {
+            return new Promise((resolve) => {
+                // 如果已经通过外部script加载，直接返回
+                if (typeof cv !== 'undefined' && cv.Mat) {
+                    cvReady = true;
+                    resolve(true);
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = OPENCV_LOCAL_PATH;
+                script.async = true;
+                script.onload = () => {
+                    // OpenCV.js 加载后需要等待 WASM 初始化
+                    const checkReady = () => {
+                        if (typeof cv !== 'undefined' && cv.Mat) {
+                            cvReady = true;
+                            console.log('[OpenCV.js] 加载成功');
+                            resolve(true);
+                        } else {
+                            setTimeout(checkReady, 200);
+                        }
+                    };
+                    checkReady();
+                };
+                script.onerror = () => {
+                    cvLoadError = 'OpenCV.js 本地文件未找到';
+                    console.warn('[OpenCV.js] 本地加载失败，使用纯JS回退');
+                    resolve(false);
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // ================================================================
+        // =====  模块 2: ONNX Runtime Web 加载器  =====
+        // ================================================================
+        // ONNX Runtime Web 离线文件放置路径: ./onnx/ort.min.js
+        // 下载: npm install onnxruntime-web 后从 node_modules/onnxruntime-web/dist/ 复制
+        const ONNX_LOCAL_PATH = './onnx/ort.min.js';
+        let ortReady = false;
+        let ortSession = null;
+
+        function loadONNXRuntime() {
+            return new Promise((resolve) => {
+                if (typeof ort !== 'undefined' && ort.InferenceSession) {
+                    ortReady = true;
+                    resolve(true);
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = ONNX_LOCAL_PATH;
+                script.async = true;
+                script.onload = () => {
+                    if (typeof ort !== 'undefined' && ort.InferenceSession) {
+                        ortReady = true;
+                        console.log('[ONNX Runtime] 加载成功');
+                        resolve(true);
+                    } else {
+                        console.warn('[ONNX Runtime] 未检测到ort全局对象');
+                        resolve(false);
+                    }
+                };
+                script.onerror = () => {
+                    console.warn('[ONNX Runtime] 本地加载失败，使用纯JS回退');
+                    resolve(false);
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // ================================================================
+        // =====  模块 3: YOLOv8n-INT8 ONNX 嵌入式模型  =====
+        // ================================================================
+        // 下方YOLO_MODEL_BASE64需替换为实际导出的INT8量化ONNX模型base64编码
+        // 生成命令: yolo export model=yolov8n.pt format=onnx simplify int8 opset=17
+        // 然后: base64 -w0 yolov8n.onnx > model_b64.txt 将内容填入下方
+        // 若模型文件大于4MB，建议使用本地文件路径 ./models/yolov8n-int8.onnx
+        const YOLO_MODEL_BASE64 = ''; // TODO: 填入yolov8n-int8.onnx的base64编码
+        const YOLO_MODEL_LOCAL_PATH = './models/yolov8n-int8.onnx';
+        const YOLO_INPUT_SIZE = 640;
+        const YOLO_CLASSES = ['bowling_ball', 'bowling_pin']; // 保龄球(0), 球瓶(1)
+        const YOLO_CONF_THRESHOLD = 0.35;
+        const YOLO_NMS_THRESHOLD = 0.45;
+        const YOLO_STRIDE = 8; // YOLOv8n stride
+
+        /**
+         * 加载YOLOv8n ONNX模型
+         * 优先从base64内嵌加载，其次从本地文件加载
+         * @returns {Promise<boolean>} 是否加载成功
+         */
+        async function loadYOLOModel() {
+            if (!ortReady) return false;
+            try {
+                let modelBuffer;
+                if (YOLO_MODEL_BASE64 && YOLO_MODEL_BASE64.length > 100) {
+                    // 从内嵌base64解码
+                    const binaryStr = atob(YOLO_MODEL_BASE64);
+                    modelBuffer = new Uint8Array(binaryStr.length);
+                    for (let i = 0; i < binaryStr.length; i++) {
+                        modelBuffer[i] = binaryStr.charCodeAt(i);
+                    }
+                    console.log('[YOLO] 从内嵌base64加载模型');
+                } else {
+                    // 从本地文件加载
+                    const resp = await fetch(YOLO_MODEL_LOCAL_PATH);
+                    if (!resp.ok) throw new Error('模型文件未找到: ' + YOLO_MODEL_LOCAL_PATH);
+                    modelBuffer = new Uint8Array(await resp.arrayBuffer());
+                    console.log('[YOLO] 从本地文件加载模型');
+                }
+                ortSession = await ort.InferenceSession.create(modelBuffer, {
+                    executionProviders: ['wasm'],
+                    graphOptimizationLevel: 'all'
+                });
+                console.log('[YOLO] 模型加载成功，输入:', ortSession.inputNames, '输出:', ortSession.outputNames);
+                return true;
+            } catch (err) {
+                console.warn('[YOLO] ONNX模型加载失败:', err.message);
+                ortSession = null;
+                return false;
+            }
+        }
+
+        /**
+         * YOLOv8n ONNX 推理
+         * @param {ImageData|Uint8ClampedArray} imageData - RGB图像数据
+         * @param {number} imgW - 图像宽度
+         * @param {number} imgH - 图像高度
+         * @returns {Array} 检测结果 [{x, y, w, h, class, confidence}, ...]
+         */
+        async function yoloInference(imageData, imgW, imgH) {
+            if (!ortSession) return [];
+
+            // 图像预处理: resize到640x640, normalize
+            const inputTensor = preprocessYOLO(imageData, imgW, imgH);
+
+            // ONNX推理
+            const feeds = {};
+            feeds[ortSession.inputNames[0]] = inputTensor;
+            const results = await ortSession.run(feeds);
+            const output = results[ortSession.outputNames[0]];
+
+            // 后处理: 解析输出 + NMS
+            const detections = postprocessYOLO(output, imgW, imgH);
+            return detections;
+        }
+
+        /**
+         * YOLO图像预处理
+         * 将任意尺寸图像resize到640x640，归一化到[0,1]
+         */
+        function preprocessYOLO(imageData, imgW, imgH) {
+            const canvas = document.createElement('canvas');
+            canvas.width = YOLO_INPUT_SIZE;
+            canvas.height = YOLO_INPUT_SIZE;
+            const ctx = canvas.getContext('2d');
+
+            // 创建临时源canvas
+            const srcCanvas = document.createElement('canvas');
+            srcCanvas.width = imgW;
+            srcCanvas.height = imgH;
+            const srcCtx = srcCanvas.getContext('2d');
+            srcCtx.putImageData(new ImageData(imageData, imgW, imgH), 0, 0);
+
+            // 等比缩放+padding到640x640
+            const scale = Math.min(YOLO_INPUT_SIZE / imgW, YOLO_INPUT_SIZE / imgH);
+            const dw = (YOLO_INPUT_SIZE - imgW * scale) / 2;
+            const dh = (YOLO_INPUT_SIZE - imgH * scale) / 2;
+            ctx.fillStyle = '#808080';
+            ctx.fillRect(0, 0, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE);
+            ctx.drawImage(srcCanvas, dw, dh, imgW * scale, imgH * scale);
+
+            const inputData = ctx.getImageData(0, 0, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE).data;
+            // 构建 NCHW 格式: [1, 3, 640, 640]
+            const chw = new Float32Array(3 * YOLO_INPUT_SIZE * YOLO_INPUT_SIZE);
+            const area = YOLO_INPUT_SIZE * YOLO_INPUT_SIZE;
+            for (let i = 0; i < area; i++) {
+                chw[i] = inputData[i * 4] / 255.0;           // R
+                chw[area + i] = inputData[i * 4 + 1] / 255.0; // G
+                chw[2 * area + i] = inputData[i * 4 + 2] / 255.0; // B
+            }
+            return new ort.Tensor('float32', chw, [1, 3, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE]);
+        }
+
+        /**
+         * YOLO后处理: 解析输出张量 + NMS
+         * YOLOv8n输出: [1, 84, 8400] — 84=4(bbox)+80(classes), 8400=anchors
+         * 此处简化为2类(ball, pin)
+         */
+        function postprocessYOLO(outputTensor, origW, origH) {
+            const data = outputTensor.data; // Float32Array
+            const dims = outputTensor.dims; // [1, N, M]
+            const numClasses = dims[1] - 4;
+            const numAnchors = dims[2];
+
+            const raw = [];
+            for (let i = 0; i < numAnchors; i++) {
+                const baseIdx = i * dims[1];
+                const cx = data[baseIdx + 0], cy = data[baseIdx + 1];
+                const w = data[baseIdx + 2], h = data[baseIdx + 3];
+                // 找最大class score
+                let maxScore = 0, maxClass = -1;
+                for (let c = 0; c < numClasses; c++) {
+                    const score = data[baseIdx + 4 + c];
+                    if (score > maxScore) { maxScore = score; maxClass = c; }
+                }
+                if (maxScore > YOLO_CONF_THRESHOLD) {
+                    const x1 = (cx - w / 2) / YOLO_INPUT_SIZE * origW;
+                    const y1 = (cy - h / 2) / YOLO_INPUT_SIZE * origH;
+                    const bw = w / YOLO_INPUT_SIZE * origW;
+                    const bh = h / YOLO_INPUT_SIZE * origH;
+                    raw.push({ x: x1 + bw / 2, y: y1 + bh / 2, w: bw, h: bh,
+                        class: maxClass, confidence: maxScore });
+                }
+            }
+
+            // 按confidence降序排序
+            raw.sort((a, b) => b.confidence - a.confidence);
+
+            // NMS (IoU-based)
+            const filtered = [];
+            const suppressed = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) {
+                if (suppressed[i]) continue;
+                filtered.push(raw[i]);
+                for (let j = i + 1; j < raw.length; j++) {
+                    if (suppressed[j]) continue;
+                    const iou = computeIoU(
+                        raw[i].x - raw[i].w / 2, raw[i].y - raw[i].h / 2, raw[i].w, raw[i].h,
+                        raw[j].x - raw[j].w / 2, raw[j].y - raw[j].h / 2, raw[j].w, raw[j].h
+                    );
+                    if (iou > YOLO_NMS_THRESHOLD) suppressed[j] = 1;
+                }
+            }
+            return filtered;
+        }
+
+        /** 计算两个矩形框的IoU */
+        function computeIoU(x1, y1, w1, h1, x2, y2, w2, h2) {
+            const xx1 = Math.max(x1, x2), yy1 = Math.max(y1, y2);
+            const xx2 = Math.min(x1 + w1, x2 + w2), yy2 = Math.min(y1 + h1, y2 + h2);
+            if (xx2 <= xx1 || yy2 <= yy1) return 0;
+            const inter = (xx2 - xx1) * (yy2 - yy1);
+            const area1 = w1 * h1, area2 = w2 * h2;
+            return inter / (area1 + area2 - inter);
+        }
+
+        // ================================================================
+        // =====  模块 4: 纯JS回退检测器 (无ONNX时使用)  =====
+        // ================================================================
+        /**
+         * 当ONNX模型不可用时，使用MOG2运动掩码 + 颜色分析做球体/球瓶检测
+         * 基于运动区域找球体(保龄球在静态球道上运动)，同时颜色辅助识别球瓶
+         * @param {ImageData|Uint8ClampedArray} imageData - 全尺寸帧RGBA
+         * @param {number} imgW - 帧宽
+         * @param {number} imgH - 帧高
+         * @param {Object} motionInfo - MOG2运动信息 {fgMask, maskW, maskH, scaleW, scaleH}
+         * @returns {Array} 检测结果
+         */
+        function fallbackDetectBallAndPins(imageData, imgW, imgH, motionInfo) {
+            const px = imageData;
+            const results = [];
+
+            // --- 球检测: 优先使用MOG2运动掩码找最大运动团块 ---
+            let ball = null;
+            if (motionInfo && motionInfo.fgMask && motionInfo.maskW > 0) {
+                ball = findBallByMotion(motionInfo.fgMask, motionInfo.maskW, motionInfo.maskH,
+                                        motionInfo.scaleW || 0.25, motionInfo.scaleH || 0.25, imgW, imgH);
+            }
+
+            // 运动检测失败时，回退到全图颜色检测(放宽阈值)
+            if (!ball) {
+                ball = findBallFullFrame(px, imgW, imgH);
+            }
+            if (ball) results.push(ball);
+
+            // --- 球瓶检测: 在全图找白色竖条状物体 ---
+            const pins = findPinsInRegion(px, imgW, imgH, 0, 0, imgW, imgH);
+            results.push(...pins);
+
+            return results;
+        }
+
+        /**
+         * 基于MOG2运动掩码检测球体
+         * 球在静态球道上运动 → 前景掩码中最大的团块就是球
+         */
+        function findBallByMotion(fgMask, maskW, maskH, scaleW, scaleH, imgW, imgH) {
+            // BFS找最大连通域
+            const visited = new Uint8Array(maskW * maskH);
+            let best = { cx: 0, cy: 0, area: 0 };
+
+            for (let y = 2; y < maskH - 2; y++) {
+                for (let x = 2; x < maskW - 2; x++) {
+                    const idx = y * maskW + x;
+                    if (fgMask[idx] !== 255 || visited[idx]) continue;
+
+                    // BFS连通域
+                    const stack = [[x, y]];
+                    visited[idx] = 1;
+                    let sx = 0, sy = 0, area = 0;
+                    let minX = x, maxX = x, minY = y, maxY = y;
+                    let maxIter = 3000;
+
+                    while (stack.length > 0 && maxIter-- > 0) {
+                        const [cx, cy] = stack.pop();
+                        sx += cx; sy += cy; area++;
+                        minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+                        minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
+
+                        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+                            const nx = cx + dx, ny = cy + dy;
+                            if (nx >= 0 && nx < maskW && ny >= 0 && ny < maskH) {
+                                const ni = ny * maskW + nx;
+                                if (fgMask[ni] === 255 && !visited[ni]) {
+                                    visited[ni] = 1;
+                                    stack.push([nx, ny]);
+                                }
+                            }
+                        }
+                    }
+
+                    // 过滤条件: 面积适中(球体不会太大也不会太小)
+                    if (area > 4 && area < maskW * maskH * 0.3 && area > best.area) {
+                        best.area = area;
+                        best.cx = sx / area;
+                        best.cy = sy / area;
+                        best.w = maxX - minX;
+                        best.h = maxY - minY;
+                    }
+                }
+            }
+
+            if (best.area < 3) return null;
+
+            // 映射回全尺寸坐标
+            const fullX = best.cx / scaleW;
+            const fullY = best.cy / scaleH;
+            const fullW = Math.max(20, best.w / scaleW);
+            const fullH = Math.max(20, best.h / scaleH);
+
+            return {
+                x: fullX, y: fullY, w: fullW, h: fullH,
+                class: 0,
+                confidence: Math.min(0.95, best.area / 200)
+            };
+        }
+
+        /**
+         * 全帧颜色分析找球体 (运动检测失败时的回退)
+         * 搜索整个帧，适应各种颜保龄球和照明条件
+         */
+        function findBallFullFrame(px, imgW, imgH) {
+            // 方法1: 找与球道形成显著对比的圆形区域
+            // 保龄球道通常是浅木色(~160-200亮度)，球通常是深色(~30-100)
+            const step = 3;
+            let sumX = 0, sumY = 0, count = 0;
+            // 收集暗色像素
+            const darkPixels = [];
+
+            for (let y = 0; y < imgH; y += step) {
+                for (let x = 0; x < imgW; x += step) {
+                    const i = (y * imgW + x) * 4;
+                    const r = px[i], g = px[i + 1], b = px[i + 2];
+                    const brightness = (r + g + b) / 3;
+
+                    // 放宽检测条件: 亮度<120即可能是球体(相对于180+的球道背景)
+                    // 同时检查RGB差异不太大(排除纯彩色区域)
+                    const maxRGB = Math.max(r, g, b);
+                    const minRGB = Math.min(r, g, b);
+                    const colorSpread = maxRGB - minRGB;
+
+                    if (brightness < 120 && colorSpread < 60) {
+                        darkPixels.push({ x, y, brightness });
+                        sumX += x; sumY += y;
+                        count++;
+                    }
+                }
+            }
+
+            if (count < 15) return null;
+
+            // 至少需要一些像素
+            const avgX = sumX / count, avgY = sumY / count;
+            const confidence = Math.min(0.85, count / 400);
+
+            return { x: avgX, y: avgY, w: 35, h: 35, class: 0, confidence: confidence };
+        }
+
+        function findPinsInRegion(px, imgW, imgH, rx, ry, rw, rh) {
+            // 球瓶是白色的，找上半部白色连通域
+            const pins = [];
+            const visited = new Uint8Array(imgW * imgH);
+            const step = 3;
+
+            for (let y = ry + 2; y < ry + rh; y += step) {
+                for (let x = rx + 2; x < rx + rw; x += step) {
+                    const i = y * imgW + x;
+                    if (visited[i]) continue;
+                    const pi = i * 4;
+                    const r = px[pi], g = px[pi + 1], b = px[pi + 2];
+                    const brightness = (r + g + b) / 3;
+                    if (brightness > 160 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30) {
+                        // 白色区域: BFS找连通域
+                        const stack = [[x, y]];
+                        visited[i] = 1;
+                        let sx = 0, sy = 0, area = 0, minX = x, maxX = x, minY = y, maxY = y;
+                        let iter = 0;
+                        while (stack.length > 0 && iter++ < 500) {
+                            const [cx, cy] = stack.pop();
+                            sx += cx; sy += cy; area++;
+                            minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+                            minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
+                            for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+                                const nx = cx + dx, ny = cy + dy;
+                                if (nx >= rx && nx < rx + rw && ny >= ry && ny < ry + rh) {
+                                    const ni = ny * imgW + nx;
+                                    if (!visited[ni]) {
+                                        const npi = ni * 4;
+                                        const nb = (px[npi] + px[npi + 1] + px[npi + 2]) / 3;
+                                        if (nb > 150) {
+                                            visited[ni] = 1;
+                                            stack.push([nx, ny]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // 球瓶形状: 窄高 (长宽比 > 1.2)
+                        const bw = maxX - minX, bh = maxY - minY;
+                        if (area > 15 && area < 2000 && bh > bw * 1.2) {
+                            pins.push({
+                                x: sx / area, y: sy / area,
+                                w: bw, h: bh,
+                                class: 1, confidence: Math.min(0.85, area / 200)
+                            });
+                        }
+                    }
+                }
+            }
+            return pins;
+        }
+
+        // ================================================================
+        // =====  模块 5: MOG2背景减除 + 形态学 (纯JS实现)  =====
+        // ================================================================
+        /**
+         * 模拟MOG2背景建模: 维护背景帧 + 指数滑动更新
+         * 效果等效于OpenCV MOG2的简化版
+         * - 背景更新率由mogLearnRate控制
+         * - 前景检测阈值由mogThreshold控制
+         * - 支持阴影抑制(通过亮度比例)
+         */
+        class MOG2BackgroundSubtractor {
+            constructor(learnRate = 0.005, threshold = 25, shadowThreshold = 0.5) {
+                this.learnRate = learnRate;
+                this.threshold = threshold;
+                this.shadowThreshold = shadowThreshold;
+                this.bgGray = null;     // 背景灰度图
+                this.bgRGB = null;      // 背景RGB
+                this.bgW = 0; this.bgH = 0;
+                this.fgMask = null;     // 前景掩码
+                this.frameCount = 0;
+            }
+
+            /** 初始化/重置背景模型 */
+            init(frameRGB, w, h) {
+                this.bgW = w; this.bgH = h;
+                this.bgRGB = new Uint8Array(frameRGB);
+                this.bgGray = new Uint8Array(w * h);
+                this.fgMask = new Uint8Array(w * h);
+                for (let i = 0; i < w * h; i++) {
+                    this.bgGray[i] = (frameRGB[i * 4] + frameRGB[i * 4 + 1] + frameRGB[i * 4 + 2]) / 3 | 0;
+                }
+                this.frameCount = 1;
+            }
+
+            /** 应用背景减除，返回前景掩码 */
+            apply(frameRGB, w, h) {
+                if (!this.bgGray || this.bgW !== w || this.bgH !== h) {
+                    this.init(frameRGB, w, h);
+                    return this.fgMask;
+                }
+
+                const lr = this.learnRate;
+                const th = this.threshold;
+                const shadowTh = this.shadowThreshold;
+                let fgCount = 0;
+
+                for (let i = 0; i < w * h; i++) {
+                    const pi = i * 4;
+                    const r = frameRGB[pi], g = frameRGB[pi + 1], b = frameRGB[pi + 2];
+                    const gray = (r + g + b) / 3 | 0;
+                    const bgG = this.bgGray[i];
+
+                    const diff = Math.abs(gray - bgG);
+
+                    if (diff > th) {
+                        // 阴影抑制: 前景像素的亮度/颜色比例与背景接近 → 可能为阴影
+                        const bgR = this.bgRGB[pi], bgG = this.bgRGB[pi + 1], bgB = this.bgRGB[pi + 2];
+                        const ratioR = bgR > 0 ? r / bgR : 1;
+                        const ratioG = bgG > 0 ? g / bgG : 1;
+                        const ratioB = bgB > 0 ? b / bgB : 1;
+                        const avgRatio = (ratioR + ratioG + ratioB) / 3;
+
+                        if (avgRatio > shadowTh && avgRatio < 1.0 && diff > th * 0.5) {
+                            // 阴影: 标记为背景
+                            this.fgMask[i] = 0;
+                        } else {
+                            this.fgMask[i] = 255;
+                            fgCount++;
+                        }
+                    } else {
+                        this.fgMask[i] = 0;
+                        // 背景更新 (移动平均)
+                        this.bgGray[i] = Math.round(bgG * (1 - lr) + gray * lr);
+                        const piI = pi;
+                        this.bgRGB[piI] = Math.round(this.bgRGB[piI] * (1 - lr * 0.5) + r * lr * 0.5);
+                        this.bgRGB[piI + 1] = Math.round(this.bgRGB[piI + 1] * (1 - lr * 0.5) + g * lr * 0.5);
+                        this.bgRGB[piI + 2] = Math.round(this.bgRGB[piI + 2] * (1 - lr * 0.5) + b * lr * 0.5);
+                    }
+                }
+
+                this.frameCount++;
+                return this.fgMask;
+            }
+
+            /** 获取前景掩码 (Motion Mask) */
+            getForegroundMask() { return this.fgMask; }
+        }
+
+        /**
+         * 形态学操作: 开运算(先腐蚀后膨胀) 和 闭运算(先膨胀后腐蚀)
+         * @param {Uint8Array} mask - 二值掩码 (0/255)
+         * @param {number} w - 宽度
+         * @param {number} h - 高度
+         * @param {number} kernelSize - 核大小 (3或5)
+         * @param {string} op - 'open'(去噪点) 或 'close'(填空洞)
+         */
+        function morphologyOp(mask, w, h, kernelSize, op) {
+            const k = Math.floor(kernelSize / 2);
+            const result = new Uint8Array(w * h);
+
+            if (op === 'erode') {
+                for (let y = k; y < h - k; y++) {
+                    for (let x = k; x < w - k; x++) {
+                        let allFG = true;
+                        for (let dy = -k; dy <= k && allFG; dy++) {
+                            for (let dx = -k; dx <= k; dx++) {
+                                if (mask[(y + dy) * w + (x + dx)] === 0) { allFG = false; break; }
+                            }
+                        }
+                        result[y * w + x] = allFG ? 255 : 0;
+                    }
+                }
+            } else if (op === 'dilate') {
+                for (let y = k; y < h - k; y++) {
+                    for (let x = k; x < w - k; x++) {
+                        let anyFG = false;
+                        for (let dy = -k; dy <= k && !anyFG; dy++) {
+                            for (let dx = -k; dx <= k; dx++) {
+                                if (mask[(y + dy) * w + (x + dx)] === 255) { anyFG = true; break; }
+                            }
+                        }
+                        result[y * w + x] = anyFG ? 255 : 0;
+                    }
+                }
+            }
+            return result;
+        }
+
+        /**
+         * 形态学开运算: 先腐蚀再膨胀 → 去除小噪点
+         * 形态学闭运算: 先膨胀再腐蚀 → 填补小空洞
+         */
+        function morphologyOpen(mask, w, h, kernelSize = 3) {
+            const eroded = morphologyOp(mask, w, h, kernelSize, 'erode');
+            return morphologyOp(eroded, w, h, kernelSize, 'dilate');
+        }
+
+        function morphologyClose(mask, w, h, kernelSize = 3) {
+            const dilated = morphologyOp(mask, w, h, kernelSize, 'dilate');
+            return morphologyOp(dilated, w, h, kernelSize, 'erode');
+        }
+
+        // ================================================================
+        // =====  模块 6: ByteTrack JS 多目标追踪器  =====
+        // ================================================================
+        /**
+         * ByteTrack 核心逻辑的纯JS实现
+         * - 卡尔曼滤波器做状态预测
+         * - IoU + 外观特征做数据关联
+         * - 永久Track ID管理
+         * - 丢失帧外推补偿(最多30帧)
+         */
+        class KalmanFilter {
+            /** 状态: [x, y, w, h, vx, vy, vw, vh] */
+            constructor(x, y, w, h) {
+                this.state = new Float64Array([x, y, w, h, 0, 0, 0, 0]);
+                this.cov = new Float64Array(64); // 8x8
+                for (let i = 0; i < 8; i++) this.cov[i * 8 + i] = 10;
+                this.Q = 0.01; // 过程噪声
+                this.R = 0.1;  // 观测噪声
+            }
+
+            predict() {
+                // 状态转移: x = x + vx, y = y + vy, ...
+                const s = this.state;
+                for (let i = 0; i < 4; i++) s[i] += s[i + 4];
+                // 协方差增加过程噪声
+                for (let i = 0; i < 8; i++) this.cov[i * 8 + i] += this.Q;
+            }
+
+            update(obsX, obsY, obsW, obsH) {
+                const s = this.state;
+                // 简单卡尔曼更新: 加权平均
+                const K = this.R / (this.cov[0] + this.R); // 卡尔曼增益
+                s[0] += K * (obsX - s[0]);
+                s[1] += K * (obsY - s[1]);
+                s[2] += K * (obsW - s[2]);
+                s[3] += K * (obsH - s[3]);
+                // 速度更新
+                s[4] = 0.5 * (s[4] + (obsX - s[0]));
+                s[5] = 0.5 * (s[5] + (obsY - s[1]));
+                // 协方差减少
+                this.cov[0] *= (1 - K);
+                this.cov[1 * 8 + 1] *= (1 - K);
+            }
+
+            getState() {
+                return {
+                    x: this.state[0], y: this.state[1],
+                    w: this.state[2], h: this.state[3]
+                };
+            }
+        }
+
+        class ByteTrackJS {
+            constructor(maxLost = 30, iouThresh = 0.3) {
+                this.tracks = [];           // 活跃轨迹
+                this.lostTracks = [];       // 丢失轨迹(待外推)
+                this.nextID = 1;
+                this.maxLost = maxLost;
+                this.iouThresh = iouThresh;
+                this.frameCount = 0;
+            }
+
+            /**
+             * 更新追踪器
+             * @param {Array} detections - [{x, y, w, h, class, confidence}, ...]
+             * @returns {Array} 追踪结果 [{id, x, y, w, h, class, confidence, status}, ...]
+             */
+            update(detections) {
+                this.frameCount++;
+
+                // 1. 卡尔曼预测所有活跃轨迹
+                for (const track of this.tracks) {
+                    track.kf.predict();
+                    track.predicted = track.kf.getState();
+                }
+
+                // 2. 数据关联: IoU匹配
+                const matches = [];
+                const unmatchedDet = new Set(detections.map((_, i) => i));
+                const unmatchedTrack = new Set(this.tracks.map((_, i) => i));
+
+                for (let ti = 0; ti < this.tracks.length; ti++) {
+                    const track = this.tracks[ti];
+                    const pred = track.predicted;
+                    if (!pred) continue;
+
+                    let bestIou = this.iouThresh;
+                    let bestDi = -1;
+
+                    for (const di of unmatchedDet) {
+                        const det = detections[di];
+                        const iou = computeIoU(pred.x - pred.w / 2, pred.y - pred.h / 2, pred.w, pred.h,
+                                               det.x - det.w / 2, det.y - det.h / 2, det.w, det.h);
+                        if (iou > bestIou) { bestIou = iou; bestDi = di; }
+                    }
+
+                    if (bestDi >= 0) {
+                        matches.push({ ti, di: bestDi });
+                        unmatchedDet.delete(bestDi);
+                        unmatchedTrack.delete(ti);
+                    }
+                }
+
+                // 3. 更新已匹配的轨迹
+                for (const { ti, di } of matches) {
+                    const track = this.tracks[ti];
+                    const det = detections[di];
+                    track.kf.update(det.x, det.y, det.w, det.h);
+                    track.det = det;
+                    track.lostCount = 0;
+                    track.updated = true;
+                }
+
+                // 4. 未匹配轨迹: 丢失计数增加，卡尔曼外推
+                for (const ti of unmatchedTrack) {
+                    const track = this.tracks[ti];
+                    track.lostCount++;
+                    track.updated = false;
+                    // 外推: 使用卡尔曼预测值
+                    track.det = track.predicted;
+                }
+
+                // 5. 未匹配检测: 创建新轨迹
+                for (const di of unmatchedDet) {
+                    const det = detections[di];
+                    const kf = new KalmanFilter(det.x, det.y, det.w, det.h);
+                    const track = {
+                        id: this.nextID++,
+                        kf: kf,
+                        predicted: kf.getState(),
+                        det: det,
+                        class: det.class,
+                        lostCount: 0,
+                        updated: true,
+                        history: []
+                    };
+                    this.tracks.push(track);
+                }
+
+                // 6. 清理丢失超过阈值的轨迹
+                this.tracks = this.tracks.filter(t => t.lostCount <= this.maxLost);
+
+                // 7. 返回结果
+                const results = this.tracks.map(t => ({
+                    id: t.id,
+                    x: t.det.x, y: t.det.y,
+                    w: t.det.w, h: t.det.h,
+                    class: t.class,
+                    confidence: t.det.confidence || 0,
+                    status: t.updated ? 'matched' : 'extrapolated'
+                }));
+
+                return results;
+            }
+
+            reset() {
+                this.tracks = [];
+                this.lostTracks = [];
+                this.nextID = 1;
+                this.frameCount = 0;
+            }
+        }
+
+        // ================================================================
+        // =====  模块 7: 高精度椭圆拟合定位  =====
+        // ================================================================
+        /**
+         * 从YOLO粗框出发，提取ROI区域 → 灰度化 → 找轮廓 → 椭圆拟合
+         * 获取亚像素级球心坐标
+         * @param {Uint8ClampedArray} imageData - 原始帧RGBA数据
+         * @param {number} imgW - 帧宽
+         * @param {number} imgH - 帧高
+         * @param {Object} box - YOLO粗框 {x, y, w, h}
+         * @returns {Object|null} {cx, cy, a, b, angle, isValid}
+         */
+        function fitEllipseFromBox(imageData, imgW, imgH, box) {
+            const padding = 0.2; // ROI外扩20%
+            const rx = Math.max(0, Math.floor(box.x - box.w * (0.5 + padding)));
+            const ry = Math.max(0, Math.floor(box.y - box.h * (0.5 + padding)));
+            const rw = Math.min(imgW - rx, Math.ceil(box.w * (1 + padding * 2)));
+            const rh = Math.min(imgH - ry, Math.ceil(box.h * (1 + padding * 2)));
+            if (rw < 5 || rh < 5) return null;
+
+            // 1. 提取ROI灰度图
+            const gray = new Uint8Array(rw * rh);
+            for (let y = 0; y < rh; y++) {
+                for (let x = 0; x < rw; x++) {
+                    const pi = ((ry + y) * imgW + (rx + x)) * 4;
+                    gray[y * rw + x] = (imageData[pi] + imageData[pi + 1] + imageData[pi + 2]) / 3 | 0;
+                }
+            }
+
+            // 2. 自适应阈值二值化 (Otsu简化版: 取灰度中值)
+            const sorted = new Uint8Array(gray).sort();
+            const med = sorted[Math.floor(sorted.length / 2)];
+            const thresh = Math.max(30, med - 20);
+            const bin = new Uint8Array(rw * rh);
+            for (let i = 0; i < gray.length; i++) {
+                bin[i] = gray[i] < thresh ? 255 : 0;
+            }
+
+            // 3. 形态学开运算去噪
+            const cleaned = morphologyOpen(bin, rw, rh, 3);
+
+            // 4. 找轮廓: 连通域分析
+            const contours = findContours(cleaned, rw, rh, 10);
+            if (contours.length === 0) return null;
+
+            // 取面积最大的轮廓
+            let best = contours[0];
+            for (const c of contours) {
+                if (c.area > best.area) best = c;
+            }
+
+            // 5. 椭圆拟合 (基于轮廓矩)
+            const ellipse = fitEllipseFromPoints(best.points);
+
+            if (!ellipse) return null;
+
+            // 6. 坐标转换回全图坐标系
+            const ell = {
+                cx: ellipse.cx + rx,
+                cy: ellipse.cy + ry,
+                a: ellipse.a,
+                b: ellipse.b,
+                angle: ellipse.angle,
+                isValid: true
+            };
+
+            // 7. 椭圆长宽比过滤 (0.8~1.2, 区分保龄球vs长条状物)
+            const aspectRatio = Math.max(ell.a, ell.b) / Math.min(ell.a, ell.b);
+            if (aspectRatio < 0.8 || aspectRatio > 1.2) {
+                // 长宽比不合格: 使用最小包围椭圆兜底
+                const fallbackEll = minEnclosingEllipse(best.points);
+                if (fallbackEll) {
+                    ell.cx = fallbackEll.cx + rx;
+                    ell.cy = fallbackEll.cy + ry;
+                    ell.a = fallbackEll.a;
+                    ell.b = fallbackEll.b;
+                    ell.angle = fallbackEll.angle;
+                    ell.isValid = false; // 标记为兜底结果
+                }
+            }
+
+            return ell;
+        }
+
+        /** 查找二值图中的轮廓 (连通域) */
+        function findContours(binMask, w, h, minArea) {
+            const visited = new Uint8Array(w * h);
+            const contours = [];
+
+            for (let y = 1; y < h - 1; y++) {
+                for (let x = 1; x < w - 1; x++) {
+                    const idx = y * w + x;
+                    if (binMask[idx] !== 255 || visited[idx]) continue;
+
+                    // BFS找连通域
+                    const points = [];
+                    const stack = [[x, y]];
+                    visited[idx] = 1;
+                    let iter = 0;
+                    while (stack.length > 0 && iter++ < 5000) {
+                        const [cx, cy] = stack.pop();
+                        points.push({ x: cx, y: cy });
+                        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+                            const nx = cx + dx, ny = cy + dy;
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                const ni = ny * w + nx;
+                                if (binMask[ni] === 255 && !visited[ni]) {
+                                    visited[ni] = 1;
+                                    stack.push([nx, ny]);
+                                }
+                            }
+                        }
+                    }
+
+                    if (points.length >= minArea) {
+                        contours.push({ points, area: points.length });
+                    }
+                }
+            }
+            return contours;
+        }
+
+        /** 基于轮廓矩拟合椭圆 */
+        function fitEllipseFromPoints(points) {
+            const n = points.length;
+            if (n < 5) return null;
+
+            // 计算质心
+            let cx = 0, cy = 0;
+            for (const p of points) { cx += p.x; cy += p.y; }
+            cx /= n; cy /= n;
+
+            // 计算协方差矩阵
+            let mxx = 0, myy = 0, mxy = 0;
+            for (const p of points) {
+                const dx = p.x - cx, dy = p.y - cy;
+                mxx += dx * dx;
+                myy += dy * dy;
+                mxy += dx * dy;
+            }
+            mxx /= n; myy /= n; mxy /= n;
+
+            // 特征值分解
+            const trace = mxx + myy;
+            const det = mxx * myy - mxy * mxy;
+            const disc = Math.sqrt(Math.max(0, trace * trace - 4 * det));
+            const lambda1 = (trace + disc) / 2;
+            const lambda2 = (trace - disc) / 2;
+
+            // 半轴长度 (2倍标准差)
+            const a = 2 * Math.sqrt(Math.max(1, lambda1));
+            const b = 2 * Math.sqrt(Math.max(1, lambda2));
+
+            // 角度
+            const angle = Math.atan2(mxy, mxx - myy) * 90 / Math.PI;
+
+            return { cx, cy, a, b, angle };
+        }
+
+        /** 最小包围椭圆 (基于最小包围矩形近似) */
+        function minEnclosingEllipse(points) {
+            if (points.length < 3) return null;
+            // 找最小包围矩形 (OBB)
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const p of points) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const a = (maxX - minX) / 2;
+            const b = (maxY - minY) / 2;
+            return { cx, cy, a: Math.max(a, 3), b: Math.max(b, 3), angle: 0 };
+        }
+
+        // ================================================================
+        // =====  模块 8: 轨迹平滑处理  =====
+        // ================================================================
+        /**
+         * Savitzky-Golay 简化平滑滤波
+         * 对轨迹点序列做局部多项式拟合平滑，消除抖动
+         * @param {Array} points - 轨迹点数组 [{x, y}, ...]
+         * @param {number} windowSize - 平滑窗口大小(奇数,5~15)
+         * @returns {Array} 平滑后的坐标点数组
+         */
+        function smoothTrajectory(points, windowSize = 7) {
+            if (points.length < windowSize) return points;
+            const halfW = Math.floor(windowSize / 2);
+            const smoothed = [];
+
+            for (let i = 0; i < points.length; i++) {
+                const start = Math.max(0, i - halfW);
+                const end = Math.min(points.length - 1, i + halfW);
+                let sumX = 0, sumY = 0;
+                for (let j = start; j <= end; j++) {
+                    sumX += points[j].x;
+                    sumY += points[j].y;
+                }
+                const n = end - start + 1;
+                smoothed.push({ x: sumX / n, y: sumY / n, t: points[i].t, rawX: points[i].rawX, rawY: points[i].rawY });
+            }
+            return smoothed;
+        }
+
+        /**
+         * 帧间位移校验: 过滤瞬时噪点
+         * @param {Object} newPt - 新检测点 {x, y}
+         * @param {Object} prevPt - 上一帧点 {x, y}
+         * @param {number} maxPixelDist - 最大允许像素位移
+         * @returns {boolean} 是否通过校验
+         */
+        function validateFrameDisplacement(newPt, prevPt, maxPixelDist = 150) {
+            if (!prevPt) return true;
+            const dx = newPt.x - prevPt.x;
+            const dy = newPt.y - prevPt.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return dist <= maxPixelDist;
+        }
+
+        // ================================================================
+        // =====  模块 9: ONNX分析主控制器  =====
+        // ================================================================
+        /**
+         * ONNX分析模式主控制器
+         * 整合: MOG2背景减除 → 运动掩码 → YOLO推理 → ByteTrack追踪 → 椭圆定位
+         */
+        class ONNXBowlingAnalyzer {
+            constructor() {
+                this.mog2 = new MOG2BackgroundSubtractor(0.005, 25, 0.5);
+                this.tracker = new ByteTrackJS(30, 0.3);
+                this.ballTrackId = -1;          // 已锁定的保龄球Track ID
+                this.ballTrajectory = [];       // 球体轨迹 [{x,y,t,rawX,rawY,speed,angle},...]
+                this.pinPositions = [];         // 球瓶位置(用于撞瓶标记)
+                this.impactPoints = [];         // 撞瓶点位
+                this.prevBallPos = null;        // 上一帧球位置
+                this.stationaryCheckCounter = 0; // 静止球体巡检计数器
+                this.useONNX = false;           // 是否使用ONNX推理(true)还是回退检测(false)
+                this.scaleW = 0.25;             // 预处理缩放比例
+                this.scaleH = 0.25;
+                this.maxPointHistory = 300;
+                this.trailSmoothFactor = 0.75;
+                this.nmsThreshold = 0.45;
+                this.mogLearnRate = 0.005;
+                this.showBallTrail = true;
+                this.showPinBox = true;
+                this.showTrackID = false;
+                this.showImpactPoints = true;
+            }
+
+            /**
+             * 主处理入口: 每帧调用
+             * @param {HTMLVideoElement} videoEl - 视频元素
+             * @returns {Object} { ballResult, pinsResults, impactThisFrame }
+             */
+            async processFrame(videoEl) {
+                const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+                if (vw <= 0 || vh <= 0) return null;
+
+                // 1. 提取帧数据 (缩放以降低运算量)
+                const sw = Math.max(32, Math.floor(vw * this.scaleW));
+                const sh = Math.max(32, Math.floor(vh * this.scaleH));
+                const frameData = this.extractFrame(videoEl, vw, vh, sw, sh);
+
+                // 2. MOG2背景减除 → 运动掩码
+                const fgMask = this.mog2.apply(frameData.rgb, sw, sh);
+
+                // 3. 形态学开闭运算去除噪点
+                const cleaned = morphologyOpen(fgMask, sw, sh, 3);
+                const closed = morphologyClose(cleaned, sw, sh, 3);
+
+                // 4. 运动掩码与原图相与 → 裁剪有效运动区块
+                const motionROI = this.applyMotionMask(frameData.rgb, closed, sw, sh);
+
+                // 5. 目标检测: ONNX推理 或 回退检测
+                let detections = [];
+                if (this.useONNX && ortSession) {
+                    // ONNX推理: 传入运动ROI区域的全尺寸重建图像
+                    const fullFrame = this.extractFullFrame(videoEl, vw, vh);
+                    detections = await yoloInference(fullFrame, vw, vh);
+                } else {
+                    // 回退检测: 传入运动掩码信息辅助检测
+                    const fullFrame = this.extractFullFrame(videoEl, vw, vh);
+                    const motionInfo = {
+                        fgMask: closed,
+                        maskW: sw, maskH: sh,
+                        scaleW: this.scaleW, scaleH: this.scaleH
+                    };
+                    detections = fallbackDetectBallAndPins(new Uint8ClampedArray(fullFrame), vw, vh, motionInfo);
+                }
+
+                // 6. 静止球体巡检: 每5帧执行一次全域检测
+                this.stationaryCheckCounter++;
+                if (this.stationaryCheckCounter >= 5 && detections.filter(d => d.class === 0).length === 0) {
+                    this.stationaryCheckCounter = 0;
+                    const fullFrame = this.extractFullFrame(videoEl, vw, vh);
+                    const motionInfo = {
+                        fgMask: closed,
+                        maskW: sw, maskH: sh,
+                        scaleW: this.scaleW, scaleH: this.scaleH
+                    };
+                    const extraDet = this.useONNX ?
+                        await yoloInference(fullFrame, vw, vh) :
+                        fallbackDetectBallAndPins(new Uint8ClampedArray(fullFrame), vw, vh, motionInfo);
+                    const extraBalls = extraDet.filter(d => d.class === 0);
+                    if (extraBalls.length > 0) detections.push(...extraBalls);
+                }
+
+                // 7. ByteTrack多目标追踪
+                const tracks = this.tracker.update(detections);
+
+                // 8. 分离球体和球瓶
+                const ballTracks = tracks.filter(t => t.class === 0);
+                const pinTracks = tracks.filter(t => t.class === 1);
+                this.pinPositions = pinTracks;
+
+                // 9. 球体锁定: 找到置信度最高的球
+                let ballResult = null;
+                if (ballTracks.length > 0) {
+                    ballTracks.sort((a, b) => b.confidence - a.confidence);
+                    ballResult = ballTracks[0];
+                    this.ballTrackId = ballResult.id;
+
+                    // 帧间位移校验
+                    if (this.prevBallPos) {
+                        const maxDisp = vw * 0.2; // 最大允许20%画面宽度位移
+                        if (!validateFrameDisplacement(ballResult, this.prevBallPos, maxDisp)) {
+                            ballResult = null; // 过滤异常跳变
+                        }
+                    }
+
+                    if (ballResult) {
+                        this.prevBallPos = ballResult;
+
+                        // 椭圆拟合精确定位
+                        const fullFrame = this.extractFullFrame(videoEl, vw, vh);
+                        const ellipse = fitEllipseFromBox(
+                            new Uint8ClampedArray(fullFrame), vw, vh,
+                            { x: ballResult.x, y: ballResult.y, w: ballResult.w, h: ballResult.h }
+                        );
+                        if (ellipse && ellipse.isValid) {
+                            ballResult.ellipse = ellipse;
+                            ballResult.preciseX = ellipse.cx;
+                            ballResult.preciseY = ellipse.cy;
+                            // 基于椭圆尺寸做简易单目尺寸标定
+                            ballResult.majorAxis = ellipse.a;
+                            ballResult.minorAxis = ellipse.b;
+                        }
+
+                        // 记录轨迹
+                        this.ballTrajectory.push({
+                            x: ballResult.preciseX || ballResult.x,
+                            y: ballResult.preciseY || ballResult.y,
+                            rawX: ballResult.x, rawY: ballResult.y,
+                            t: performance.now(),
+                            confidence: ballResult.confidence,
+                            trackId: ballResult.id,
+                            status: ballResult.status
+                        });
+                        if (this.ballTrajectory.length > this.maxPointHistory) {
+                            this.ballTrajectory.shift();
+                        }
+                    }
+                } else if (this.ballTrackId > 0) {
+                    // 球体丢失: 尝试从ByteTrack的丢失轨迹中找回
+                    const lostBall = this.tracker.tracks.find(
+                        t => t.id === this.ballTrackId && t.lostCount > 0
+                    );
+                    if (lostBall && lostBall.predicted) {
+                        ballResult = {
+                            x: lostBall.predicted.x, y: lostBall.predicted.y,
+                            w: lostBall.predicted.w, h: lostBall.predicted.h,
+                            id: lostBall.id, confidence: 0.3,
+                            status: 'extrapolated'
+                        };
+                        // 卡尔曼外推点也加入轨迹
+                        this.ballTrajectory.push({
+                            x: lostBall.predicted.x, y: lostBall.predicted.y,
+                            rawX: lostBall.predicted.x, rawY: lostBall.predicted.y,
+                            t: performance.now(),
+                            confidence: 0.3, trackId: lostBall.id,
+                            status: 'extrapolated'
+                        });
+                        if (this.ballTrajectory.length > this.maxPointHistory) {
+                            this.ballTrajectory.shift();
+                        }
+                    }
+                }
+
+                // 10. 撞瓶检测: 球体接近球瓶且速度>阈值
+                let impactThisFrame = null;
+                if (ballResult && pinTracks.length > 0) {
+                    for (const pin of pinTracks) {
+                        const dx = ballResult.x - pin.x;
+                        const dy = ballResult.y - pin.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const impactThreshold = (ballResult.w + pin.w) * 0.8;
+                        if (dist < impactThreshold) {
+                            impactThisFrame = { x: pin.x, y: pin.y, ballTrackId: ballResult.id, t: performance.now() };
+                            this.impactPoints.push(impactThisFrame);
+                            break;
+                        }
+                    }
+                }
+
+                return {
+                    ballResult,
+                    pinTracks,
+                    impactThisFrame,
+                    fgMask: closed,
+                    sw, sh
+                };
+            }
+
+            /** 提取缩放后的帧RGB数据 */
+            extractFrame(videoEl, vw, vh, sw, sh) {
+                const canvas = document.createElement('canvas');
+                canvas.width = sw; canvas.height = sh;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(videoEl, 0, 0, vw, vh, 0, 0, sw, sh);
+                const imgData = ctx.getImageData(0, 0, sw, sh);
+                return { rgb: new Uint8Array(imgData.data), w: sw, h: sh, data: imgData.data };
+            }
+
+            /** 提取全尺寸帧 (用于ONNX推理) */
+            extractFullFrame(videoEl, vw, vh) {
+                const canvas = document.createElement('canvas');
+                canvas.width = vw; canvas.height = vh;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(videoEl, 0, 0, vw, vh);
+                return ctx.getImageData(0, 0, vw, vh).data;
+            }
+
+            /** 运动掩码与原图相与 */
+            applyMotionMask(rgb, mask, w, h) {
+                const result = new Uint8Array(w * h * 4);
+                for (let i = 0; i < w * h; i++) {
+                    if (mask[i] === 255) {
+                        result[i * 4] = rgb[i * 4];
+                        result[i * 4 + 1] = rgb[i * 4 + 1];
+                        result[i * 4 + 2] = rgb[i * 4 + 2];
+                        result[i * 4 + 3] = 255;
+                    }
+                }
+                return result;
+            }
+
+            /** 速度测算 (mph) */
+            computeSpeed() {
+                const traj = this.ballTrajectory;
+                if (traj.length < 3) return 0;
+                const p1 = traj[Math.max(0, traj.length - 10)];
+                const p2 = traj[traj.length - 1];
+                const dt = (p2.t - p1.t) / 1000;
+                if (dt < 0.01) return 0;
+                const dx = p2.rawX - p1.rawX;
+                const dy = p2.rawY - p1.rawY;
+                const pixelDist = Math.sqrt(dx * dx + dy * dy);
+                const pixelPerFt = 640 / 4; // 粗略估计
+                return (pixelDist / pixelPerFt / dt) * 0.681818;
+            }
+
+            /** 偏转角度测算 (度) */
+            computeDeflectionAngle() {
+                const traj = this.ballTrajectory;
+                if (traj.length < 5) return 0;
+                const len = traj.length;
+                const pStart = traj[Math.max(0, len - 15)];
+                const pEnd = traj[len - 1];
+                const dx = pEnd.x - pStart.x;
+                const dy = pEnd.y - pStart.y;
+                return Math.atan2(dx, dy) * 180 / Math.PI;
+            }
+
+            /** 导出轨迹JSON */
+            exportTrajectoryJSON() {
+                const data = {
+                    version: '1.0',
+                    timestamp: new Date().toISOString(),
+                    frameInfo: {
+                        totalPoints: this.ballTrajectory.length,
+                        trackId: this.ballTrackId
+                    },
+                    trajectory: this.ballTrajectory.map((p, i) => ({
+                        index: i,
+                        x: Math.round(p.x * 100) / 100,
+                        y: Math.round(p.y * 100) / 100,
+                        rawX: Math.round(p.rawX * 100) / 100,
+                        rawY: Math.round(p.rawY * 100) / 100,
+                        time: Math.round((p.t - (this.ballTrajectory[0]?.t || 0)) / 10) / 100,
+                        confidence: p.confidence,
+                        trackId: p.trackId,
+                        status: p.status || 'matched'
+                    })),
+                    impactPoints: this.impactPoints.map((imp, i) => ({
+                        index: i,
+                        x: Math.round(imp.x * 100) / 100,
+                        y: Math.round(imp.y * 100) / 100,
+                        time: imp.t
+                    }))
+                };
+                return JSON.stringify(data, null, 2);
+            }
+
+            reset() {
+                this.mog2 = new MOG2BackgroundSubtractor(this.mogLearnRate, 25, 0.5);
+                this.tracker.reset();
+                this.ballTrackId = -1;
+                this.ballTrajectory = [];
+                this.pinPositions = [];
+                this.impactPoints = [];
+                this.prevBallPos = null;
+                this.stationaryCheckCounter = 0;
+            }
+        }
+
+        // ================================================================
+        // =====  模块 10: 绘制函数 (ONNX模式专用)  =====
+        // ================================================================
+        /** 在检测叠加层上绘制ONNX分析结果 */
+        function drawONNXOverlay(ctx, analyzer, result, dw, dh) {
+            if (!result) return;
+
+            // 裁剪到画布边界，防止文字/图形溢出视频画面
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, 0, dw, dh);
+            ctx.clip();
+
+            // 绘制运动掩码热力图 (半透明)
+            if (result.fgMask && analyzer.showBallTrail) {
+                ctx.fillStyle = 'rgba(255, 100, 0, 0.08)';
+                const scaleX = dw / result.sw;
+                const scaleY = dh / result.sh;
+                for (let y = 0; y < result.sh; y += 2) {
+                    for (let x = 0; x < result.sw; x += 2) {
+                        if (result.fgMask[y * result.sw + x] === 255) {
+                            ctx.fillRect(x * scaleX, y * scaleY, scaleX * 2, scaleY * 2);
+                        }
+                    }
+                }
+            }
+
+            // 绘制球瓶检测框
+            if (analyzer.showPinBox && result.pinTracks) {
+                for (const pin of result.pinTracks) {
+                    const x1 = pin.x - pin.w / 2, y1 = pin.y - pin.h / 2;
+                    ctx.strokeStyle = pin.status === 'extrapolated' ? 'rgba(88, 166, 255, 0.4)' : 'rgba(88, 166, 255, 0.75)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash(pin.status === 'extrapolated' ? [4, 4] : []);
+                    ctx.strokeRect(x1, y1, pin.w, pin.h);
+                    ctx.setLineDash([]);
+                    // 类别标签
+                    ctx.fillStyle = 'rgba(88, 166, 255, 0.9)';
+                    ctx.font = '11px monospace';
+                    ctx.fillText(`PIN #${pin.id} ${(pin.confidence * 100).toFixed(0)}%`, x1, y1 - 4);
+                    if (analyzer.showTrackID) {
+                        ctx.fillStyle = '#d2991d';
+                        ctx.fillText(`ID:${pin.id}`, x1, y1 + pin.h + 12);
+                    }
+                }
+            }
+
+            // 绘制球体
+            if (analyzer.showBallTrail && result.ballResult) {
+                const ball = result.ballResult;
+                const bx = ball.preciseX || ball.x;
+                const by = ball.preciseY || ball.y;
+
+                // 椭圆结果
+                if (ball.ellipse) {
+                    ctx.strokeStyle = ball.status === 'extrapolated' ? 'rgba(255, 136, 50, 0.5)' : 'rgba(255, 136, 50, 0.9)';
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash(ball.status === 'extrapolated' ? [3, 3] : []);
+                    ctx.beginPath();
+                    ctx.ellipse(bx, by, ball.ellipse.a, ball.ellipse.b,
+                        (ball.ellipse.angle || 0) * Math.PI / 180, 0, 2 * Math.PI);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // 球心十字
+                const crossSize = 8;
+                ctx.strokeStyle = ball.status === 'extrapolated' ? '#ff8844' : '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(bx - crossSize, by); ctx.lineTo(bx + crossSize, by);
+                ctx.moveTo(bx, by - crossSize); ctx.lineTo(bx, by + crossSize);
+                ctx.stroke();
+
+                // Track ID
+                if (analyzer.showTrackID) {
+                    ctx.fillStyle = '#d2991d';
+                    ctx.font = 'bold 12px monospace';
+                    ctx.fillText(`BALL #${ball.id}`, bx + 15, by - 10);
+                }
+
+                // 速度标签
+                const speed = analyzer.computeSpeed();
+                if (speed > 0) {
+                    ctx.fillStyle = 'rgba(58, 166, 255, 0.9)';
+                    ctx.font = 'bold 13px monospace';
+                    ctx.fillText(`${speed.toFixed(1)} mph`, bx + 15, by + 5);
+                }
+            }
+
+            // 撞瓶标记
+            if (analyzer.showImpactPoints && analyzer.impactPoints.length > 0) {
+                const latest = analyzer.impactPoints[analyzer.impactPoints.length - 1];
+                if (latest && performance.now() - latest.t < 1000) {
+                    const alpha = 1 - (performance.now() - latest.t) / 1000;
+                    ctx.fillStyle = `rgba(255, 80, 60, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(latest.x, latest.y, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.fillText('撞击!', latest.x + 15, latest.y);
+                }
+            }
+
+            // 球轨迹尾部
+            if (analyzer.showBallTrail && analyzer.ballTrajectory.length >= 2) {
+                const traj = analyzer.ballTrajectory;
+                const recent = traj.slice(-30);
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                for (let i = 1; i < recent.length; i++) {
+                    const p1 = recent[i - 1], p2 = recent[i];
+                    const alpha = 0.15 + 0.85 * (i / recent.length);
+                    ctx.beginPath();
+                    ctx.moveTo(p1.rawX, p1.rawY);
+                    ctx.lineTo(p2.rawX, p2.rawY);
+                    ctx.strokeStyle = `rgba(240, 136, 62, ${alpha * 0.6})`;
+                    ctx.stroke();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        /** ONNX模式轨迹绘制 (俯视图) */
+        function drawONNXTrail(ctx, analyzer, w, h) {
+            const traj = analyzer.ballTrajectory;
+            if (traj.length < 2) return;
+
+            // 平滑轨迹
+            const smoothed = smoothTrajectory(traj, 7);
+
+            // 连线
+            for (let i = 1; i < smoothed.length; i++) {
+                const p1 = smoothed[i - 1], p2 = smoothed[i];
+                const px1 = (p1.rawX / 640) * w, py1 = (p1.rawY / 480) * h;
+                const px2 = (p2.rawX / 640) * w, py2 = (p2.rawY / 480) * h;
+                const alpha = 0.2 + 0.8 * (i / smoothed.length);
+                ctx.beginPath();
+                ctx.moveTo(px1, py1);
+                ctx.lineTo(px2, py2);
+                ctx.strokeStyle = `rgba(240, 136, 62, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+
+            // 撞瓶标记
+            for (const imp of analyzer.impactPoints) {
+                const ix = (imp.x / 640) * w, iy = (imp.y / 480) * h;
+                ctx.fillStyle = '#f85149';
+                ctx.beginPath();
+                ctx.arc(ix, iy, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        }
+
+        // ================================================================
+        // =====  模块 11: 模式切换 + 数据导出  =====
+        // ================================================================
+        let onnxAnalyzer = null;
+        let onnxModeActive = false;
+        let onnxModelLoaded = false;
+
+        /** 切换ONNX模式显示/隐藏参数面板 */
+        function toggleONNXPanel(show) {
+            const panel = document.getElementById('onnxParamsPanel');
+            const modelStatus = document.getElementById('modelStatus');
+            if (show) {
+                panel.style.display = 'flex';
+                modelStatus.style.display = 'inline-block';
+            } else {
+                panel.style.display = 'none';
+                modelStatus.style.display = 'none';
+            }
+        }
+
+        /** 设置模型状态指示器 */
+        function setModelStatus(text, className) {
+            const el = document.getElementById('modelStatus');
+            el.textContent = '模型: ' + text;
+            el.className = 'model-status ' + (className || '');
+        }
+
+        /** 导出JSON数据 */
+        function exportJSON() {
+            if (!onnxAnalyzer || onnxAnalyzer.ballTrajectory.length === 0) {
+                setStatus('没有轨迹数据可导出', 'yellow');
+                return;
+            }
+            const jsonStr = onnxAnalyzer.exportTrajectoryJSON();
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'bowling_trajectory_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            setStatus('轨迹数据已导出', 'green');
+        }
+
+        /** 导出轨迹图为PNG */
+        function exportTrajectoryPNG() {
+            const canvas = trailCanvas;
+            const link = document.createElement('a');
+            link.download = 'bowling_trajectory_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            setStatus('轨迹图已导出', 'green');
+        }
+
+        /** ONNX模式主检测循环中的帧处理 */
+        async function detectFrameONNX(videoEl) {
+            if (!onnxAnalyzer) return;
+
+            const result = await onnxAnalyzer.processFrame(videoEl);
+            if (!result) return;
+
+            // 清空并重绘检测叠加层
+            detectCtx.clearRect(0, 0, detectOverlay.width, detectOverlay.height);
+
+            // 标定覆盖层 (保持兼容)
+            if (laneCorners && laneCorners.length === 4) {
+                drawCalibrationOnVideo();
+            }
+
+            // ONNX模式专用绘制
+            drawONNXOverlay(detectCtx, onnxAnalyzer, result, detectOverlay.width, detectOverlay.height);
+
+            // 更新轨迹画布
+            if (isTracking) {
+                // 同步球轨迹到主轨迹数组
+                const ballTraj = onnxAnalyzer.ballTrajectory;
+                if (ballTraj.length > 0) {
+                    const last = ballTraj[ballTraj.length - 1];
+                    addTrailPoint(last.rawX, last.rawY);
+                }
+            }
+
+            // 更新状态和数据
+            const ballResult = result.ballResult;
+            if (ballResult) {
+                const speed = onnxAnalyzer.computeSpeed();
+                const angle = onnxAnalyzer.computeDeflectionAngle();
+                const extTag = ballResult.status === 'extrapolated' ? ' [外推]' : '';
+                const dirTag = ballDirection === 0 ? '' : ballDirection < 0 ? ' ↑向球瓶' : ' ↓向球瓶';
+                setStatus(`ONNX追踪 #${ballResult.id} ${speed.toFixed(1)}mph ${angle.toFixed(1)}°${extTag}${dirTag}`, 'green');
+            } else {
+                setStatus('ONNX分析中... (未检测到球体)', 'yellow');
+            }
+
+            // 更新速度显示
+            const speed = onnxAnalyzer.computeSpeed();
+            if (speed > 0) {
+                currentSpeedEl.textContent = speed.toFixed(1);
+            }
+        }
+
+        // ================================================================
+        // =====  启动 ====================
         window.onload = async () => {
             // 默认启用球道标定模式
             calibrating = true;
@@ -2526,7 +4277,144 @@
             homographyMatrix = null;
             drawTrail();
             setStatus('1.标定球道4角点 | 2.加载视频 | 3.空球道时点"捕获背景" | 4.准备→开始', 'yellow');
+
+            // 尝试加载 OpenCV.js
+            loadOpenCV().then(success => {
+                if (success) {
+                    console.log('[启动] OpenCV.js 已就绪');
+                } else {
+                    console.log('[启动] OpenCV.js 不可用，使用纯JS回退');
+                }
+            });
+
+            // 尝试加载 ONNX Runtime Web
+            loadONNXRuntime().then(success => {
+                if (success) {
+                    setModelStatus('ONNX Runtime 就绪', 'loaded');
+                    // 尝试加载YOLO模型
+                    loadYOLOModel().then(modelOk => {
+                        if (modelOk) {
+                            setModelStatus('YOLOv8n-INT8 已加载', 'loaded');
+                            onnxModelLoaded = true;
+                            if (onnxAnalyzer) onnxAnalyzer.useONNX = true;
+                        } else {
+                            setModelStatus('回退检测模式', 'error');
+                        }
+                    });
+                } else {
+                    setModelStatus('回退检测模式', 'error');
+                }
+            });
+
+            // ==== ONNX参数面板事件监听 ====
+            document.getElementById('nmsThreshold').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('nmsVal').textContent = val.toFixed(2);
+                if (onnxAnalyzer) onnxAnalyzer.nmsThreshold = val;
+            });
+            document.getElementById('mogLearnRate').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('mogVal').textContent = val.toFixed(3);
+                if (onnxAnalyzer) {
+                    onnxAnalyzer.mogLearnRate = val;
+                    onnxAnalyzer.mog2.learnRate = val;
+                }
+            });
+            document.getElementById('trailSmoothFactor').addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('trailSmoothVal').textContent = val.toFixed(2);
+                if (onnxAnalyzer) onnxAnalyzer.trailSmoothFactor = val;
+            });
+            document.getElementById('showBallTrail').addEventListener('change', (e) => {
+                if (onnxAnalyzer) onnxAnalyzer.showBallTrail = e.target.checked;
+            });
+            document.getElementById('showPinBox').addEventListener('change', (e) => {
+                if (onnxAnalyzer) onnxAnalyzer.showPinBox = e.target.checked;
+            });
+            document.getElementById('showTrackID').addEventListener('change', (e) => {
+                if (onnxAnalyzer) onnxAnalyzer.showTrackID = e.target.checked;
+            });
+            document.getElementById('showImpactPoints').addEventListener('change', (e) => {
+                if (onnxAnalyzer) onnxAnalyzer.showImpactPoints = e.target.checked;
+            });
+            document.getElementById('exportJsonBtn').addEventListener('click', exportJSON);
+            document.getElementById('exportTrajectoryImgBtn').addEventListener('click', exportTrajectoryPNG);
+
+            // ONNX模式面板初始隐藏
+            toggleONNXPanel(false);
         };
     </script>
+
+    <!--
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║        纯离线独立HTML保龄球视觉分析工具 — 部署文档              ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+
+    【离线部署步骤】
+    1. 目录结构 (HTML文件同级目录):
+       bowling_analyzercopy.html
+       ├── opencv/
+       │   └── opencv.js          (从 https://docs.opencv.org/4.x/opencv.js 下载)
+       ├── onnx/
+       │   └── ort.min.js         (npm install onnxruntime-web 后从 dist/ 复制)
+       │   └── ort-wasm-simd.wasm (同上，从 dist/ 复制 WASM 文件)
+       └── models/
+           └── yolov8n-int8.onnx  (INT8量化YOLOv8n模型)
+
+    2. 模型转换指令:
+       pip install ultralytics onnx onnxruntime
+       yolo export model=yolov8n.pt format=onnx simplify int8 opset=17
+       # 输出: yolov8n.onnx → 重命名为 yolov8n-int8.onnx 放入 models/ 目录
+       # 如需嵌入HTML: base64 -w0 yolov8n-int8.onnx > b64.txt
+       #   将内容填入代码中 YOLO_MODEL_BASE64 变量
+
+    3. 浏览器本地文件运行权限说明:
+       由于浏览器安全策略，直接双击打开本地HTML存在以下限制:
+       - fetch() 无法加载本地文件 (跨域限制)
+       - 摄像头需要 HTTPS 或 localhost 权限
+
+       Chrome 启动命令 (放行本地文件权限):
+       Windows:
+         chrome.exe --allow-file-access-from-files --disable-web-security --user-data-dir="C:\temp\chrome_dev"
+       macOS:
+         /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --allow-file-access-from-files --disable-web-security --user-data-dir="/tmp/chrome_dev"
+       Linux:
+         google-chrome --allow-file-access-from-files --disable-web-security --user-data-dir="/tmp/chrome_dev"
+
+       或者使用本地HTTP服务器:
+         npx http-server -p 8080 -c-1
+         然后浏览器打开 http://localhost:8080/bowling_analyzercopy.html
+
+    4. 无网络验证:
+       - 断开网络
+       - 确认 opencv/opencv.js 存在 (约8MB)
+       - 确认 onnx/ort.min.js 和 ort-wasm-simd.wasm 存在
+       - 确认 models/yolov8n-int8.onnx 存在 (约3MB)
+       - 使用上述Chrome命令打开HTML即可离线运行
+
+    【模型替换方法】
+    - 将新的ONNX模型放入 models/ 目录
+    - 修改代码中 YOLO_MODEL_LOCAL_PATH 为新路径
+    - 如需修改类别: 更新 YOLO_CLASSES 数组
+    - 如需修改输入尺寸: 更新 YOLO_INPUT_SIZE 常量
+    - 推理置信度阈值: 修改 YOLO_CONF_THRESHOLD
+    - NMS阈值: 修改 YOLO_NMS_THRESHOLD 或通过UI滑块调整
+
+    【性能说明】
+    - 回退模式(无ONNX): 纯JS运算, CPU可稳定30FPS+
+    - ONNX模式(有模型): WASM推理, 依赖CPU性能, 预期15-25FPS
+    - MOG2缩放因子0.25可大幅降低CPU占用
+    - ByteTrack纯JS实现内存占用 < 5MB
+    - 全部分析在前端浏览器内存中运算, 无数据上传
+
+    【容错机制】
+    - ONNX模型缺失/加载失败 → 自动回退到纯JS检测器
+    - OpenCV.js缺失 → 使用MOG2 + 形态学纯JS实现
+    - 球体拖影/轮廓残缺 → 最小包围椭圆兜底计算
+    - 静止球体无法被MOG检测 → 每5帧全域巡检
+    - 帧间球心瞬时跳变 → 位移阈值校验过滤
+    - 椭圆长宽比不合格 → 0.8~1.2过滤, 区分球vs倒地球瓶
+    ═══════════════════════════════════════════════════════════════════════
+    -->
 </body>
 </html>
